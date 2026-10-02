@@ -17,6 +17,10 @@ import { InteractionSystem } from './InteractionSystem';
 import { InteriorSystem } from './InteriorSystem';
 import { MissionSystem } from './MissionSystem';
 import { STARTING_CASH } from '../data/economy';
+import { ARREST_FINE, HOSPITAL_BILL } from '../data/wanted';
+import { ShopSystem } from './ShopSystem';
+import { MemoryStorage, SaveSystem, type KeyValueStorage } from './SaveSystem';
+import { Weather } from './Weather';
 import type { Actor } from './Actor';
 import { Clock } from './Clock';
 import { TrafficSystem } from './TrafficSystem';
@@ -53,6 +57,9 @@ export class World {
 	readonly interactions: InteractionSystem;
 	readonly interiors: InteriorSystem;
 	readonly missions: MissionSystem;
+	readonly shops: ShopSystem;
+	readonly saves: SaveSystem;
+	readonly weather: Weather;
 	/**
 	 * Aim ray (normally the camera's centre ray). `skip` ignores hits between camera and player.
 	 * When `fromCamera` is false (headless) it is derived from the player's heading each step.
@@ -68,10 +75,11 @@ export class World {
 	private districtTimer = 0;
 	private explosions: PendingExplosion[] = [];
 	private deathTimer = 0;
+	private arrestLevel = 0;
 	/** Optional hooks installed by systems added in later phases. */
 	onVehicleDespawn?: (v: Vehicle) => void;
 
-	constructor(seed: number = WORLD.seed) {
+	constructor(seed: number = WORLD.seed, storage: KeyValueStorage = new MemoryStorage()) {
 		this.rng = new Random(seed ^ 0xabcdef);
 		this.city = generateCity(seed);
 		this.collision = new StaticCollision(16);
@@ -87,6 +95,9 @@ export class World {
 		this.interactions = new InteractionSystem(this);
 		this.interiors = new InteriorSystem(this);
 		this.missions = new MissionSystem(this);
+		this.shops = new ShopSystem(this);
+		this.weather = new Weather(this);
+		this.saves = new SaveSystem(this, storage);
 		const home = this.city.poi('safehouse')!;
 		this.player.teleport(home.x + Math.sin(home.facing) * 3, home.z + Math.cos(home.facing) * 3, home.facing);
 	}
@@ -94,6 +105,7 @@ export class World {
 	step(dt: number): void {
 		this.time += dt;
 		this.clock.update(dt);
+		this.weather.update(dt);
 		this.processExplosions();
 		const p = this.player;
 		if (!this.aim.fromCamera) this.aimFromHeading();
@@ -106,6 +118,8 @@ export class World {
 		this.police.step(dt);
 		this.interactions.step();
 		this.missions.update(dt);
+		this.shops.update();
+		this.saves.stats.playTime += dt;
 		p.updateVitals(dt);
 		this.updateDeath(dt);
 		this.updateDistrict(dt);
@@ -153,6 +167,7 @@ export class World {
 		const p = this.player;
 		if (!p.alive || p.state === 'arrested') return;
 		if (p.state === 'driving' && p.vehicle) this.vehicles.ejectPlayer(p.vehicle, false);
+		this.arrestLevel = this.wanted.level;
 		p.state = 'arrested';
 		p.vx = p.vz = 0;
 		p.aiming = false;
@@ -183,6 +198,14 @@ export class World {
 		}
 		p.resetVitals();
 		p.teleport(best.x + Math.sin(best.facing) * 2.5, best.z + Math.cos(best.facing) * 2.5, best.facing);
+		if (reason === 'death') {
+			const bill = this.economy.charge(HOSPITAL_BILL, 'Hospital bill');
+			this.bus.emit('notify', { text: `${best.name} patched you up. Bill: $${bill}.`, kind: 'bad', duration: 5 });
+		} else {
+			const fine = this.economy.charge(ARREST_FINE[this.arrestLevel] ?? 500, 'Bail');
+			this.combat.inventory.clear();
+			this.bus.emit('notify', { text: `Released on $${fine} bail. Your weapons were confiscated.`, kind: 'bad', duration: 5 });
+		}
 		this.bus.emit('playerRespawned', { where: best.name, reason });
 	}
 

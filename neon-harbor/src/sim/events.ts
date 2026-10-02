@@ -71,6 +71,8 @@ export interface GameEvents {
 	openShop: { shop: string; poi: string };
 	requestSave: { where: string };
 
+	weatherChanged: { state: string };
+
 	// Presentation
 	sound: { id: string; x?: number; z?: number; volume?: number };
 	shake: { amount: number };

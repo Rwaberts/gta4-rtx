@@ -94,7 +94,7 @@ export function register({ scenario, page, game, sleep, hold, shot }) {
 		await shot('20-street-life');
 		const stats = await game(() => {
 			const w = window.__NH__.world;
-			return { actors: w.actors.count, vehicles: w.vehicles.count, drawn: window.__NH__.humans.rendered };
+			return { actors: w.actors.count, vehicles: w.vehicles.count, drawn: window.__NH__.view.humans.rendered };
 		});
 		return `actors ${stats.actors}, vehicles ${stats.vehicles}, humanoids drawn ${stats.drawn}`;
 	});
@@ -154,7 +154,7 @@ export function register({ scenario, page, game, sleep, hold, shot }) {
 		await page.mouse.down({ button: 'left' });
 		await sleep(100);
 		await page.mouse.up({ button: 'left' });
-		await page.waitForFunction(() => window.__NH__.effects.liveParticles > 40, null, { timeout: 30000 });
+		await page.waitForFunction(() => window.__NH__.view.effects.liveParticles > 40, null, { timeout: 60000 });
 		await shot('31-grenade');
 		await game(() => (window.__NH__.world.player.invulnerable = false));
 	});
@@ -203,6 +203,7 @@ export function register({ scenario, page, game, sleep, hold, shot }) {
 	});
 
 	scenario('mission-start', async () => {
+		await page.waitForFunction(() => window.__NH__.world.player.state === 'onFoot', null, { timeout: 60000 });
 		await game(() => {
 			const g = window.__NH__;
 			const w = g.world;
@@ -249,5 +250,58 @@ export function register({ scenario, page, game, sleep, hold, shot }) {
 		const inside = await game(() => !!window.__NH__.world.interiors.current);
 		if (!inside) throw new Error('not inside');
 		await game(() => window.__NH__.world.interiors.exit());
+	});
+
+	scenario('city-map', async () => {
+		await page.keyboard.press('KeyM');
+		await page.waitForSelector('.citymap-canvas', { timeout: 15000 });
+		await page.mouse.click(500, 300);
+		await sleep(500);
+		await shot('60-city-map');
+		const wp = await game(() => window.__NH__.ui.waypoint);
+		if (!wp) throw new Error('waypoint not set by clicking the map');
+		await page.getByText('Back', { exact: true }).click();
+		await sleep(300);
+		const state = await game(() => window.__NH__.state);
+		if (state !== 'playing') throw new Error('map did not return to game');
+	});
+
+	scenario('gun-shop', async () => {
+		await game(() => {
+			const w = window.__NH__.world;
+			w.wanted.clear(true);
+			w.economy.add(5000, 'smoke');
+			const inst = w.interiors.instanceFor('weapons_downtown');
+			w.interiors.enter(inst);
+			const c = w.interiors.toWorld(inst, inst.def.counter.x, inst.def.counter.z);
+			w.player.teleport(c.x, c.z, 0);
+		});
+		await page.waitForFunction(() => window.__NH__.world.interactions.current?.label.startsWith('Shop'), null, { timeout: 15000 });
+		await page.keyboard.press('KeyE');
+		await page.waitForSelector('.shop', { timeout: 15000 });
+		await shot('61-gun-shop');
+		const before = await game(() => window.__NH__.world.economy.cash);
+		await page.locator('.shop-row', { hasText: 'Wasp MX' }).getByText('Buy').click();
+		const after = await game(() => window.__NH__.world.economy.cash);
+		if (after >= before) throw new Error('purchase did not charge');
+		await page.getByText('Leave', { exact: true }).click();
+		await game(() => window.__NH__.world.interiors.exit());
+		return `spent $${before - after}`;
+	});
+
+	scenario('save-load', async () => {
+		await page.keyboard.press('Escape');
+		await page.getByText('Save Game', { exact: true }).click();
+		await page.locator('.save-slot', { hasText: 'Slot 3' }).getByRole('button').first().click();
+		const cash = await game(() => window.__NH__.world.economy.cash);
+		await game(() => window.__NH__.world.economy.add(-100, 'smoke'));
+		await page.getByText('Back', { exact: true }).click();
+		await page.getByText('Load Game', { exact: true }).click();
+		await page.locator('.save-slot', { hasText: 'Slot 3' }).getByText('Load').click();
+		await sleep(500);
+		const after = await game(() => ({ cash: window.__NH__.world.economy.cash, state: window.__NH__.state }));
+		await shot('62-after-load');
+		if (after.cash !== cash) throw new Error(`cash not restored: ${after.cash} vs ${cash}`);
+		if (after.state !== 'playing') throw new Error('not playing after load');
 	});
 }

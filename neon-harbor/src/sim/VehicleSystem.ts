@@ -57,6 +57,21 @@ export class VehicleSystem {
 		this.pool.push(v);
 	}
 
+	/** Removes every vehicle (new game / load). */
+	clear(): void {
+		const p = this.world.player;
+		if (p.vehicle) {
+			p.vehicle.driver = null;
+			p.vehicle = null;
+			if (p.state === 'driving' || p.state === 'entering') p.state = 'onFoot';
+		}
+		for (const v of [...this.list]) {
+			v.persistent = false;
+			this.despawn(v);
+		}
+		this.hash.clear();
+	}
+
 	nearest(x: number, z: number, r: number, filter?: (v: Vehicle) => boolean): Vehicle | null {
 		return this.hash.nearest(x, z, r, filter);
 	}

@@ -11,6 +11,8 @@ export interface Interactable {
 	radius?: number;
 	/** Shown greyed-out with this reason instead of acting. */
 	blocked?: string;
+	/** Also available while driving (drive-in services). */
+	inVehicle?: boolean;
 	act(): void;
 }
 
@@ -31,14 +33,16 @@ export class InteractionSystem {
 		const w = this.world;
 		const p = w.player;
 		this.current = null;
-		if (p.state !== 'onFoot') return;
+		const driving = p.state === 'driving';
+		if (p.state !== 'onFoot' && !driving) return;
 		this.scratch.length = 0;
 		for (const prov of this.providers) prov(this.scratch);
 		let best: Interactable | null = null;
 		let bestD = Infinity;
 		for (const it of this.scratch) {
+			if (driving && !it.inVehicle) continue;
 			const r = it.radius ?? PLAYER.interactRange;
-			const d = Math.hypot(it.x - p.x, it.z - p.z);
+			const d = Math.hypot(it.x - p.px, it.z - p.pz);
 			if (d <= r && d < bestD) {
 				bestD = d;
 				best = it;

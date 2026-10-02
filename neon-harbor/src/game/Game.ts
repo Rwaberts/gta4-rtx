@@ -1,101 +1,78 @@
-// Composition root: wires simulation (World), rendering, input, camera and UI, and runs the loop.
+// Composition root: owns the simulation (World), presentation (WorldView), camera, input and
+// UI (UiController); runs the frame loop and the top-level game state machine
+// (menu -> playing <-> paused).
 
 import { SIM } from '../data/config';
 import { Input } from '../core/Input';
 import { World } from '../sim/World';
+import type { KeyValueStorage, SlotId } from '../sim/SaveSystem';
 import { Graphics, QUALITY_PRESETS } from '../render/Graphics';
-import { CityRenderer } from '../render/CityRenderer';
-import { HumanoidRenderer, defaultPose, type HumanoidPose } from '../render/HumanoidRenderer';
 import { sharedUniforms } from '../render/materials';
-import { VehicleRenderer } from '../render/VehicleRenderer';
-import { Effects } from '../render/Effects';
-import { SignalRenderer } from '../render/SignalRenderer';
-import { HeliRenderer } from '../render/HeliRenderer';
-import { MarkerRenderer } from '../render/MarkerRenderer';
-import { InteriorRenderer } from '../render/InteriorRenderer';
-import type { MissionMarker } from '../sim/MissionSystem';
 import { CameraController, type CameraTarget } from './CameraController';
-import { Hud } from '../ui/Hud';
-import { Menus } from '../ui/Menus';
-import { button, el } from '../ui/dom';
-import * as THREE from 'three';
-import { WEAPONS } from '../data/weapons';
+import { WorldView } from './WorldView';
+import { UiController } from './UiController';
+import { loadSettings, type Settings } from '../ui/Settings';
 
 export type GameState = 'menu' | 'playing' | 'paused';
+
+/** localStorage wrapped so private browsing / blocked storage never crashes the game. */
+function browserStorage(): KeyValueStorage {
+	return {
+		getItem: (k) => {
+			try {
+				return localStorage.getItem(k);
+			} catch {
+				return null;
+			}
+		},
+		setItem: (k, v) => {
+			try {
+				localStorage.setItem(k, v);
+			} catch {
+				/* quota or disabled */
+			}
+		},
+		removeItem: (k) => {
+			try {
+				localStorage.removeItem(k);
+			} catch {
+				/* ignore */
+			}
+		},
+	};
+}
 
 export class Game {
 	readonly world: World;
 	readonly graphics: Graphics;
 	readonly input = new Input();
-	readonly city: CityRenderer;
-	readonly humans: HumanoidRenderer;
 	readonly cam: CameraController;
-	readonly vehicleViews: VehicleRenderer;
-	readonly effects: Effects;
-	readonly signals: SignalRenderer;
-	readonly heli: HeliRenderer;
-	readonly markers: MarkerRenderer;
-	readonly interiorViews: InteriorRenderer;
-	private markerList: MissionMarker[] = [];
-	private retryPending = false;
-	private readonly npcPose: HumanoidPose = defaultPose();
-	private grenadeMeshes: THREE.Mesh[] = [];
-	private readonly grenadeGeo = new THREE.SphereGeometry(0.12, 8, 6);
-	private readonly grenadeMat = new THREE.MeshLambertMaterial({ color: 0x2a3a2a });
-	readonly hud: Hud;
-	readonly menus: Menus;
+	readonly view: WorldView;
+	readonly ui: UiController;
+	settings: Settings;
 	state: GameState = 'menu';
+	fps = 0;
 	private last = performance.now();
 	private fpsTime = 0;
 	private fpsFrames = 0;
-	fps = 0;
 	private simMs = 0;
-	private readonly playerPose: HumanoidPose = {
-		...defaultPose(),
-		shirt: 0x1f5a5a,
-		pants: 0x24283a,
-		skin: 0x8d5a3b,
-		hair: 0x111111,
-	};
-	private surfaceOffset = 0;
-	private readonly camTarget: CameraTarget = { x: 0, y: 0, z: 0, heading: 0, speed: 0, size: 4, aiming: false, crouching: false, lookBehind: false };
 	private wasLocked = false;
+	private readonly camTarget: CameraTarget = { x: 0, y: 0, z: 0, heading: 0, speed: 0, size: 4, aiming: false, crouching: false, lookBehind: false };
 
 	constructor(container: HTMLElement) {
 		const viewport = container.querySelector('#viewport') as HTMLElement;
-		const ui = container.querySelector('#ui') as HTMLElement;
-		this.world = new World();
-		this.graphics = new Graphics(viewport, QUALITY_PRESETS.medium);
-		this.city = new CityRenderer(this.world.city, this.graphics.scene);
-		this.humans = new HumanoidRenderer(this.graphics.scene, SIM.maxRenderedActors + 8);
+		const uiRoot = container.querySelector('#ui') as HTMLElement;
+		this.settings = loadSettings();
+		this.world = new World(undefined, browserStorage());
+		this.graphics = new Graphics(viewport, QUALITY_PRESETS[this.settings.quality]);
 		this.cam = new CameraController(this.graphics.camera, this.world.collision);
-		this.vehicleViews = new VehicleRenderer(this.graphics.scene);
-		this.effects = new Effects(this.graphics.scene);
-		this.signals = new SignalRenderer(this.graphics.scene, this.world.roads);
-		this.heli = new HeliRenderer(this.graphics.scene);
-		this.markers = new MarkerRenderer(this.graphics.scene);
-		this.interiorViews = new InteriorRenderer(this.graphics.scene, this.world.interiors.instances);
-		this.world.bus.on('missionFailed', () => (this.retryPending = true));
-		this.world.bus.on('interiorChanged', () => {
-			// Doors teleport the player: put the camera straight behind them.
-			this.fillCamTarget();
-			this.cam.setMode(this.world.interiors.current ? 'interior' : 'foot');
-			this.cam.snapTo(this.camTarget);
-		});
-		this.hookEffects();
+		this.view = new WorldView(this.world, this.graphics, this.cam);
+		this.ui = new UiController(this, this.world, uiRoot);
 		this.input.attach(this.graphics.renderer.domElement);
-		this.hud = new Hud(ui, this.world);
-		this.menus = new Menus(ui, {
-			newGame: () => this.newGame(),
-			resume: () => this.resume(),
-			quitToMenu: () => this.quitToMenu(),
-			hasSave: () => false,
-			continueGame: () => this.newGame(),
-			openSettings: (back) => this.placeholderPanel('Settings', back),
-			openSaveLoad: (mode, back) => this.placeholderPanel(mode === 'save' ? 'Save Game' : 'Load Game', back),
-			openMap: (back) => this.placeholderPanel('City Map', back),
-		});
+		this.applySettings(this.settings);
 
+		this.world.bus.on('interiorChanged', () => this.snapCamera());
+		this.world.bus.on('playerRespawned', () => this.snapCamera());
 		this.graphics.renderer.domElement.addEventListener('click', () => {
 			if (this.state === 'playing') this.input.requestPointerLock();
 		});
@@ -106,91 +83,91 @@ export class Game {
 			this.wasLocked = locked;
 		});
 
+		// Fresh world state so the menu backdrop has the starter car etc.
+		this.ui.resetForNewGame();
 		const p = this.world.player;
-		this.city.buildAround(p.x, p.z, 500);
-		this.spawnStarterVehicles();
+		this.view.prewarm(p.x, p.z, 500);
 	}
 
-	/** Player-owned car parked outside the safehouse, plus a couple of street cars nearby. */
-	private spawnStarterVehicles(): void {
-		const w = this.world;
-		const home = w.city.poi('safehouse')!;
-		const fx = Math.sin(home.facing);
-		const fz = Math.cos(home.facing);
-		const along = { x: Math.cos(home.facing), z: -Math.sin(home.facing) };
-		const heading = home.facing - Math.PI / 2;
-		const own = w.vehicles.spawn('coupe', home.x + fx * 3.8 + along.x * 6, home.z + fz * 3.8 + along.z * 6, heading, 'owned', 0x2ac8e8);
-		if (own) own.persistent = true;
-		w.vehicles.spawn('pickup', home.x + fx * 3.8 - along.x * 8, home.z + fz * 3.8 - along.z * 8, heading, 'parked');
-	}
-
-	private hookEffects(): void {
-		const bus = this.world.bus;
-		bus.on('explosion', (e) => this.effects.explosion(e.x, e.y, e.z, e.radius));
-		bus.on('impact', (e) => {
-			this.effects.sparks(e.x, 0.6, e.z, 0, 0.5, 0, Math.min(16, Math.floor(e.speed)));
-			if (e.vehicle.driver === 'player' || e.other?.driver === 'player') this.cam.addShake(Math.min(0.8, e.speed * 0.04));
-		});
-		bus.on('shake', (e) => this.cam.addShake(e.amount));
-		bus.on('shot', (e) => {
-			const fx = this.effects;
-			fx.muzzle(e.fx, e.fy, e.fz, e.tx - e.fx, e.ty - e.fy, e.tz - e.fz);
-			if (e.weapon !== 'shotgun' || Math.random() < 0.35) fx.tracer(e.fx, e.fy, e.fz, e.tx, e.ty, e.tz);
-			if (e.hit === 'metal') fx.sparks(e.tx, e.ty, e.tz, e.nx, e.ny, e.nz, 5);
-			else if (e.hit === 'world' || e.hit === 'flesh') fx.impactPuff(e.tx, e.ty, e.tz, e.hit);
-		});
-		bus.on('recoil', (e) => {
-			this.cam.pitch -= e.amount * (0.6 + Math.random() * 0.6);
-			this.cam.yaw += (Math.random() - 0.5) * e.amount * 0.6;
-		});
-		bus.on('hitConfirm', (e) => this.hud.hitMarker(e.kill));
-	}
+	// ------------------------------------------------------------- game states
 
 	start(): void {
-		const loading = document.getElementById('loading');
-		loading?.classList.add('done');
-		this.state = 'menu';
-		this.cam.setMode('cinematic');
-		this.menus.showMain();
+		document.getElementById('loading')?.classList.add('done');
+		this.toMenu();
 		requestAnimationFrame(this.frame);
 	}
 
-	newGame(): void {
-		this.menus.close();
-		this.hud.show(true);
+	private toMenu(): void {
+		this.state = 'menu';
+		this.ui.hud.show(false);
+		this.cam.setMode('cinematic');
+		this.ui.menus.showMain();
+	}
+
+	private beginPlaying(): void {
+		this.ui.menus.close();
+		this.ui.hud.show(true);
 		this.state = 'playing';
-		const p = this.world.player;
-		this.cam.setMode('foot');
-		this.fillCamTarget();
-		this.cam.snapTo(this.camTarget);
+		this.snapCamera();
+		this.view.prewarm(this.world.player.px, this.world.player.pz, 400);
 		this.input.requestPointerLock();
-		this.world.bus.emit('notify', { text: 'Welcome to Neon Harbor. Click to capture the mouse, WASD to move.', kind: 'info', duration: 6 });
-		void p;
+	}
+
+	newGame(): void {
+		this.ui.resetForNewGame();
+		this.beginPlaying();
+		this.world.bus.emit('notify', { text: 'Welcome home to Neon Harbor, Kai. Visit Rosa at the diner (pink M on the radar).', kind: 'mission', duration: 7 });
+		this.world.bus.emit('notify', { text: 'Click to capture the mouse. WASD to move, F for vehicles, E to interact, M for the map.', kind: 'info', duration: 7 });
+	}
+
+	loadSlot(slot: SlotId): void {
+		if (this.ui.loadSlot(slot)) {
+			this.beginPlaying();
+			this.world.bus.emit('notify', { text: 'Game loaded.', kind: 'good', duration: 2.5 });
+		}
 	}
 
 	pause(): void {
 		if (this.state !== 'playing') return;
 		this.state = 'paused';
 		this.input.exitPointerLock();
-		this.menus.showPause();
+		this.ui.menus.showPause();
+	}
+
+	/** Pauses with a custom panel (shops, map, retry). */
+	pauseWith(panel: HTMLElement): void {
+		this.state = 'paused';
+		this.input.exitPointerLock();
+		this.ui.menus.openPanel(panel);
 	}
 
 	resume(): void {
-		this.menus.close();
+		this.ui.menus.close();
 		this.state = 'playing';
 		this.input.requestPointerLock();
 	}
 
 	quitToMenu(): void {
-		this.state = 'menu';
-		this.hud.show(false);
-		this.cam.setMode('cinematic');
-		this.menus.showMain();
+		this.world.saves.save('auto');
+		this.toMenu();
 	}
 
-	private placeholderPanel(title: string, back: () => void): HTMLElement {
-		return el('div', { class: 'menu-panel' }, el('div', { class: 'menu-title', text: title }), el('p', { text: 'Coming soon.' }), button('Back', back));
+	applySettings(s: Settings): void {
+		this.settings = s;
+		const q = { ...QUALITY_PRESETS[s.quality], drawDistance: s.drawDistance, shadows: s.shadows && s.quality !== 'low' };
+		q.detailDistance = Math.min(q.detailDistance, s.drawDistance * 0.55);
+		this.graphics.applyQuality(q);
+		this.cam.sensitivity = 0.0024 * s.sensitivity;
+		this.cam.invertY = s.invertY;
+		this.cam.baseFov = s.fov;
+		this.world.traffic.density = s.traffic;
+		this.world.actors.density = s.peds;
+		this.world.clock.scale = s.clockSpeed;
+		this.world.bus.emit('sound', { id: 'volume', volume: s.volume });
+		if (s.showFps !== this.ui.hud.debugVisible) this.ui.hud.toggleDebug();
 	}
+
+	// --------------------------------------------------------------------- loop
 
 	private handleGlobalInput(): void {
 		const inp = this.input;
@@ -198,7 +175,8 @@ export class Game {
 			if (this.state === 'playing') this.pause();
 			else if (this.state === 'paused') this.resume();
 		}
-		if (inp.wasPressed('debug')) this.hud.toggleDebug();
+		if (inp.wasPressed('map') && this.state === 'playing') this.ui.openMapFromGame();
+		if (inp.wasPressed('debug')) this.ui.hud.toggleDebug();
 	}
 
 	private gatherControls(): void {
@@ -245,7 +223,7 @@ export class Game {
 			t.crouching = false;
 		} else {
 			t.x = p.x;
-			t.y = p.y + this.surfaceOffset;
+			t.y = p.y + this.view.surfaceOffset;
 			t.z = p.z;
 			t.heading = p.heading;
 			t.speed = p.speed;
@@ -254,6 +232,14 @@ export class Game {
 			t.crouching = p.crouching;
 		}
 		t.lookBehind = this.input.isDown('lookBehind');
+	}
+
+	/** Puts the camera behind the player instantly (teleports, doors, respawns). */
+	snapCamera(): void {
+		this.fillCamTarget();
+		const p = this.world.player;
+		this.cam.setMode(p.state === 'driving' ? 'vehicle' : this.world.interiors.current ? 'interior' : 'foot', this.camTarget);
+		this.cam.snapTo(this.camTarget);
 	}
 
 	private frame = (now: number): void => {
@@ -270,7 +256,6 @@ export class Game {
 			this.fpsFrames = 0;
 		}
 		this.handleGlobalInput();
-
 		if (this.state === 'playing') {
 			this.gatherControls();
 			const t0 = performance.now();
@@ -279,8 +264,7 @@ export class Game {
 			for (let i = 0; i < steps; i++) this.world.step(h);
 			this.simMs = performance.now() - t0;
 		}
-
-		this.updateView(dt);
+		this.render(dt);
 		this.input.endFrame();
 	};
 
@@ -290,223 +274,64 @@ export class Game {
 		for (let i = 0; i < steps; i++) this.world.step(SIM.fixedDt);
 	}
 
-	private updateView(dt: number): void {
+	private render(dt: number): void {
 		const w = this.world;
 		const p = w.player;
+		const playing = this.state === 'playing';
 		sharedUniforms.uTime.value += dt;
-
-		// Actors stand on raised sidewalks visually.
-		const targetOffset = p.y < 0.05 && !p.swimming && !w.city.isOnRoad(p.x, p.z) ? 0.15 : 0;
-		this.surfaceOffset += (targetOffset - this.surfaceOffset) * Math.min(1, dt * 12);
 
 		this.fillCamTarget();
 		if (this.state !== 'menu') this.cam.setMode(p.state === 'driving' ? 'vehicle' : w.interiors.current ? 'interior' : 'foot', this.camTarget);
-		if (this.state === 'menu') {
-			this.cam.update(dt, 0, 0, this.camTarget);
-		} else if (this.state === 'playing') {
-			this.cam.update(dt, this.input.mouseDX, this.input.mouseDY, this.camTarget);
-		}
+		if (this.state === 'menu') this.cam.update(dt, 0, 0, this.camTarget);
+		else if (playing) this.cam.update(dt, this.input.mouseDX, this.input.mouseDY, this.camTarget);
 		const cam = this.graphics.camera;
 		this.graphics.followShadows(cam.position.x, cam.position.z);
+		this.updateViewRay();
+
+		this.view.update(dt, this.state !== 'menu', playing);
+		this.ui.update(dt, playing, this.cam.yaw, this.debugText());
+		this.graphics.render();
+	}
+
+	/** Shares the camera ray with the simulation (aiming, spawn culling). */
+	private updateViewRay(): void {
+		const w = this.world;
+		const p = w.player;
+		const cam = this.graphics.camera.position;
 		const fwd = this.cam.forward;
 		const fl = Math.hypot(fwd.x, fwd.z) || 1;
-		w.view.x = cam.position.x;
-		w.view.z = cam.position.z;
+		w.view.x = cam.x;
+		w.view.z = cam.z;
 		w.view.dirX = fwd.x / fl;
 		w.view.dirZ = fwd.z / fl;
 		const aim = w.aim;
 		aim.fromCamera = true;
-		aim.ox = cam.position.x;
-		aim.oy = cam.position.y;
-		aim.oz = cam.position.z;
+		aim.ox = cam.x;
+		aim.oy = cam.y;
+		aim.oz = cam.z;
 		aim.dx = fwd.x;
 		aim.dy = fwd.y;
 		aim.dz = fwd.z;
-		// Ignore anything between the camera and the player.
-		aim.skip = Math.max(0.5, (p.px - cam.position.x) * fwd.x + (p.y + 1.4 - cam.position.y) * fwd.y + (p.pz - cam.position.z) * fwd.z);
-
-		// Humanoids.
-		this.humans.begin();
-		if (this.state !== 'menu' && p.state !== 'driving') {
-			const pose = this.playerPose;
-			pose.x = p.x;
-			pose.y = p.y + this.surfaceOffset;
-			pose.z = p.z;
-			pose.heading = p.heading;
-			pose.walkPhase = p.animPhase;
-			pose.walkAmount = Math.min(1, p.speed / 5) * (p.onGround || p.swimming ? 1 : 0.2);
-			pose.crouch += ((p.crouching ? 1 : 0) - pose.crouch) * Math.min(1, dt * 10);
-			const wdef = w.combat.inventory.def;
-			pose.armed = wdef.pose;
-			pose.aim = p.aiming && wdef.kind === 'hitscan' ? 1 : 0;
-			pose.punch = p.punchTimer > 0 ? Math.min(1, p.punchTimer / 0.15) : 0;
-			pose.dead = p.state === 'dead' ? Math.min(1, pose.dead + dt * 2) : 0;
-			this.humans.add(pose);
-		}
-		if (this.state !== 'menu') this.addActorPoses();
-		this.humans.end();
-		this.signals.update(cam.position.x, cam.position.z, w.time, dt);
-		const want = w.wanted;
-		this.heli.update(w.police.heli, want.seen ? p.px : want.lkpX, want.seen ? p.pz : want.lkpZ, sharedUniforms.uNight.value, dt);
-
-		const q = this.graphics.quality;
-		const night = sharedUniforms.uNight.value;
-		this.city.update(cam.position.x, cam.position.z, q.drawDistance, q.detailDistance, night, dt);
-		this.vehicleViews.update(w.vehicles.list, p.state === 'driving' ? p.vehicle : null, night, dt, cam.position.x, cam.position.z, Math.min(q.drawDistance, 450));
-		this.updateEffects(dt);
-
-		this.updatePrompt();
-		this.updateMissionUi(dt);
-		const inv = w.combat.inventory;
-		const wd = WEAPONS[inv.current];
-		this.hud.setWeapon(wd.name, wd.kind === 'melee' ? null : inv.state.clip, wd.kind === 'melee' ? null : inv.state.reserve, w.combat.reloading);
-		this.hud.update(dt, w, this.debugText());
-		this.graphics.render();
-	}
-
-	private addActorPoses(): void {
-		const w = this.world;
-		const pose = this.npcPose;
-		for (const a of w.actors.list) {
-			if (!a.active || a.vehicle || a.hidden || a.tier > 1) continue;
-			pose.x = a.x;
-			pose.z = a.z;
-			pose.y = a.y + (w.city.isOnRoad(a.x, a.z) ? 0 : 0.15);
-			pose.heading = a.heading;
-			pose.walkPhase = a.animPhase;
-			pose.walkAmount = Math.min(1.25, a.speed / 4);
-			pose.crouch = a.crouch;
-			pose.aim = a.aiming ? 1 : 0;
-			pose.armed = a.weapon ? (a.weapon === 'pistol' ? 1 : 2) : 0;
-			pose.punch = a.punch;
-			pose.phone = a.phone;
-			pose.handsUp = a.handsUp;
-			pose.dead = a.dead ? Math.min(1, a.deadTime * 2.5) : a.knockdown > 0 ? Math.min(1, a.knockdown / 0.6) : 0;
-			pose.shirt = a.shirt;
-			pose.pants = a.pants;
-			pose.skin = a.skin;
-			pose.hair = a.hair;
-			pose.hat = a.hat;
-			pose.scale = a.scale;
-			pose.sleeves = a.sleeves;
-			this.humans.add(pose);
-		}
-	}
-
-	private updateMissionUi(dt: number): void {
-		const w = this.world;
-		const ms = w.missions;
-		this.hud.setObjective(ms.active ? ms.objectiveText() : '');
-		const o = ms.active ? ms.active.def.objectives[ms.active.index] : null;
-		this.hud.setProgress(o && o.type === 'hold' ? ms.progress : null);
-		ms.markers(this.markerList);
-		const city = w.city;
-		this.markers.update(this.markerList, ms.pickups, (x, z) => (w.interiors.isInterior(x, z) || city.isOnRoad(x, z) ? 0 : 0.16), dt);
-		// Offer a retry once the player is back on their feet.
-		if (this.retryPending && this.state === 'playing' && w.player.alive && w.player.state !== 'arrested') {
-			this.retryPending = false;
-			this.showRetry();
-		}
-	}
-
-	private showRetry(): void {
-		const f = this.world.missions.lastFailed;
-		if (!f) return;
-		this.state = 'paused';
-		this.input.exitPointerLock();
-		const panel = el(
-			'div',
-			{ class: 'menu-panel' },
-			el('div', { class: 'menu-title', text: 'Mission Failed' }),
-			el('p', { text: f.reason }),
-			el(
-				'div',
-				{ class: 'menu-list' },
-				button(f.checkpoint > 0 ? 'Retry from checkpoint' : 'Retry mission', () => {
-					this.menus.close();
-					this.state = 'playing';
-					this.world.missions.retry();
-					this.input.requestPointerLock();
-				}),
-				button('Not now', () => {
-					this.menus.close();
-					this.state = 'playing';
-					this.input.requestPointerLock();
-				}),
-			),
-		);
-		this.menus.openPanel(panel);
-	}
-
-	private updatePrompt(): void {
-		const w = this.world;
-		const p = w.player;
-		if (this.state !== 'playing' || p.state !== 'onFoot') {
-			this.hud.setPrompt(null);
-			return;
-		}
-		const it = w.interactions.current;
-		if (it) {
-			this.hud.setPrompt('E', it.blocked ? `${it.label} — ${it.blocked}` : it.label);
-			return;
-		}
-		const v = w.vehicles.enterCandidate();
-		if (v) {
-			const name = `${v.def.make} ${v.def.name}`;
-			const verb = v.role === 'owned' ? 'Get in your' : v.driver ? 'Carjack the' : v.role === 'mission' ? 'Get in the' : 'Steal the';
-			this.hud.setPrompt('F', `${verb} ${name}`);
-			return;
-		}
-		this.hud.setPrompt(null);
-	}
-
-	private syncGrenades(): void {
-		const list = this.world.combat.grenades;
-		while (this.grenadeMeshes.length < list.length) {
-			const m = new THREE.Mesh(this.grenadeGeo, this.grenadeMat);
-			this.graphics.scene.add(m);
-			this.grenadeMeshes.push(m);
-		}
-		this.grenadeMeshes.forEach((m, i) => {
-			const g = list[i];
-			m.visible = !!g && g.active;
-			if (m.visible) m.position.set(g.x, g.y, g.z);
-		});
-	}
-
-	private updateEffects(dt: number): void {
-		this.syncGrenades();
-		const cam = this.graphics.camera.position;
-		if (this.state === 'playing') {
-			for (const v of this.world.vehicles.list) {
-				if (v.destroyed && !v.sinking) {
-					if (v.age % 1 < 0.5 && (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2 < 150 * 150) this.effects.vehicleSmoke(v.x, 1.2, v.z, 0, false, dt * 0.5);
-					continue;
-				}
-				if (v.healthFraction > 0.4 || v.sinking) continue;
-				if ((v.x - cam.x) ** 2 + (v.z - cam.z) ** 2 > 200 * 200) continue;
-				const hx = v.x + v.forwardX * v.halfLength * 0.7;
-				const hz = v.z + v.forwardZ * v.halfLength * 0.7;
-				this.effects.vehicleSmoke(hx, v.def.height * 0.7, hz, v.healthFraction, v.burning, dt);
-			}
-			this.effects.update(dt);
-		}
+		aim.skip = Math.max(0.5, (p.px - cam.x) * fwd.x + (p.y + 1.4 - cam.y) * fwd.y + (p.pz - cam.z) * fwd.z);
 	}
 
 	private debugText(): string {
-		if (!this.hud.debugVisible) return '';
-		const p = this.world.player;
+		if (!this.ui.hud.debugVisible) return '';
+		const w = this.world;
+		const p = w.player;
 		const info = this.graphics.renderer.info;
+		const v = this.view;
 		return [
 			`fps ${this.fps.toFixed(0)}  sim ${this.simMs.toFixed(2)}ms`,
 			`calls ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k`,
-			`chunks ${this.city.builtCount}/${this.city.totalChunks}`,
-			`pos ${p.x.toFixed(1)}, ${p.y.toFixed(2)}, ${p.z.toFixed(1)}  ${this.world.currentDistrict ?? ''}`,
-			`state ${p.state}  speed ${(p.vehicle ? Math.abs(p.vehicle.forwardSpeed) * 3.6 : p.speed).toFixed(1)}${p.vehicle ? ' km/h hp ' + p.vehicle.health.toFixed(0) : ''}`,
-			`vehicles ${this.world.vehicles.count} (views ${this.vehicleViews.viewCount})  particles ${this.effects.liveParticles}`,
-			`actors ${this.world.actors.count} (drawn ${this.humans.rendered})  peds target ${this.world.actors.targetPopulation()}  traffic target ${this.world.traffic.targetTraffic()}`,
-			`time ${this.world.clock.format()}  wanted ${this.world.wanted.level} heat ${this.world.wanted.heat.toFixed(0)} ${this.world.wanted.seen ? 'SEEN' : this.world.wanted.searching ? 'search ' + this.world.wanted.searchRemaining.toFixed(0) : ''}`,
-			`police ${this.world.police.summary()}`,
+			`chunks ${v.city.builtCount}/${v.city.totalChunks}`,
+			`pos ${p.x.toFixed(1)}, ${p.y.toFixed(2)}, ${p.z.toFixed(1)}  ${w.currentDistrict ?? ''}`,
+			`state ${p.state}${p.vehicle ? ' hp ' + p.vehicle.health.toFixed(0) : ''}`,
+			`vehicles ${w.vehicles.count} (views ${v.vehicles.viewCount})  particles ${v.effects.liveParticles}`,
+			`actors ${w.actors.count} (drawn ${v.humans.rendered})  peds target ${w.actors.targetPopulation()}  traffic target ${w.traffic.targetTraffic()}`,
+			`time ${w.clock.format()}  weather ${w.weather.state}  wet ${w.wetness.toFixed(2)}`,
+			`wanted ${w.wanted.level} heat ${w.wanted.heat.toFixed(0)} ${w.wanted.seen ? 'SEEN' : w.wanted.searching ? 'search ' + w.wanted.searchRemaining.toFixed(0) : ''}`,
+			`police ${w.police.summary()}`,
 		].join('\n');
 	}
 }

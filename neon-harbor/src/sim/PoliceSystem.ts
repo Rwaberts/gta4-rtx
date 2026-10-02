@@ -266,6 +266,16 @@ export class PoliceSystem {
 		});
 	}
 
+	/** Forgets all units (their vehicles/officers are cleared by the caller). */
+	reset(): void {
+		this.units.length = 0;
+		this.footPatrols.length = 0;
+		this.heli.active = false;
+		this.heli.leaving = false;
+		this.seenFlag = false;
+		this.spawnCooldown = 0;
+	}
+
 	get activeUnits(): number {
 		return this.units.filter((u) => !u.removed && u.state !== 'patrol' && u.state !== 'standDown').length;
 	}

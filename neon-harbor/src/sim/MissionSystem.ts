@@ -142,6 +142,18 @@ export class MissionSystem {
 		return this.start(f.id, f.checkpoint);
 	}
 
+	/** Clears all progress (new game / load). */
+	reset(): void {
+		if (this.active) {
+			this.cleanup(this.active, true);
+			this.active = null;
+		}
+		this.lastFailed = null;
+		this.completed.clear();
+		this.pickups.length = 0;
+		this.world.bus.emit('objective', { text: '' });
+	}
+
 	abandon(): void {
 		if (!this.active) return;
 		this.fail('Mission abandoned.');

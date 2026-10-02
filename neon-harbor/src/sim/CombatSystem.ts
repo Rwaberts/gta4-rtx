@@ -48,6 +48,8 @@ export class CombatSystem {
 	readonly inventory = new Inventory();
 	readonly grenades: Grenade[] = [];
 	private cooldown = 0;
+	/** Semi-auto presses are remembered briefly so clicks during cooldowns are not lost. */
+	private fireBuffer = 0;
 	reloadTimer = 0;
 	private aimHold = 0;
 	private aimCheck = 0;
@@ -72,6 +74,7 @@ export class CombatSystem {
 
 	step(dt: number): void {
 		this.cooldown -= dt;
+		this.fireBuffer -= dt;
 		this.aimHold -= dt;
 		this.crimeCooldown -= dt;
 		this.recentFire = Math.max(0, this.recentFire - dt);
@@ -109,8 +112,10 @@ export class CombatSystem {
 
 		const driving = p.state === 'driving';
 		if (driving && !def.driveBy) return;
-		const wants = def.auto ? c.fire : c.firePressed;
+		if (c.firePressed) this.fireBuffer = 0.35;
+		const wants = def.auto ? c.fire : this.fireBuffer > 0;
 		if (wants && this.cooldown <= 0 && this.reloadTimer <= 0) {
+			this.fireBuffer = 0;
 			if (def.kind === 'melee') {
 				if (!driving) this.punch();
 				this.cooldown = 1 / def.fireRate;
@@ -124,7 +129,7 @@ export class CombatSystem {
 			} else {
 				w.bus.emit('sound', { id: 'empty' });
 				this.cooldown = 0.3;
-				if (c.firePressed) inv.cycle(1);
+				inv.cycle(1);
 			}
 		}
 		if (st.clip === 0 && st.reserve > 0 && this.reloadTimer <= 0 && def.kind !== 'melee') this.startReload(def);

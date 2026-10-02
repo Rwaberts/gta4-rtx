@@ -1,6 +1,7 @@
 // In-game HUD (DOM overlay). Elements are updated with change detection to avoid layout thrash.
 
 import { PLAYER } from '../data/config';
+import { formatMoney } from '../core/math';
 import type { World } from '../sim/World';
 import type { NotifyKind } from '../sim/events';
 import { el, setText, setWidth } from './dom';
@@ -44,6 +45,16 @@ export class Hud {
 	private bannerTimer = 0;
 	private progress = el('div', { class: 'hud-progress hidden' });
 	private progressFill = el('div');
+	private money = el('div', { class: 'hud-money' });
+	private moneyDelta = el('div', { class: 'hud-money-delta' });
+	private clock = el('div', { class: 'hud-clock' });
+	private vehiclePanel = el('div', { class: 'hud-vehicle hidden' });
+	private speed = el('div', { class: 'speed' });
+	private vehicleName = el('div', { class: 'vname' });
+	private vehicleHealth = el('div');
+	private vehicleBar = el('div', { class: 'bar vhealth' }, this.vehicleHealth);
+	private deltaTimer = 0;
+	readonly layer = el('div', { class: 'hud-layer' });
 	private hitTimer = 0;
 	private districtTimer = 0;
 	debugVisible = false;
@@ -62,7 +73,16 @@ export class Hud {
 		this.overlay.append(this.overlayTitle, this.overlaySub);
 		this.banner.append(this.bannerTitle, this.bannerSub);
 		this.progress.append(el('div', { class: 'bar' }, this.progressFill));
-		this.root.append(this.weapon, this.wanted, this.arrestBar, this.radio, this.objective, this.dialogue, this.banner, this.progress, this.overlay);
+		this.vehiclePanel.append(this.speed, this.vehicleName, this.vehicleBar);
+		this.root.append(this.money, this.moneyDelta, this.clock, this.weapon, this.wanted, this.vehiclePanel, this.arrestBar, this.radio, this.objective, this.dialogue, this.banner, this.progress, this.layer, this.overlay);
+		world.bus.on('moneyChanged', (m) => {
+			setText(this.money, formatMoney(m.cash));
+			if (m.delta === 0) return;
+			setText(this.moneyDelta, (m.delta > 0 ? '+' : '-') + formatMoney(Math.abs(m.delta)));
+			this.moneyDelta.className = 'hud-money-delta show ' + (m.delta > 0 ? 'gain' : 'loss');
+			this.deltaTimer = 2.5;
+		});
+		setText(this.money, formatMoney(world.economy.cash));
 		world.bus.on('objective', (o) => {
 			this.objective.classList.toggle('hidden', !o.text);
 		});
@@ -104,6 +124,19 @@ export class Hud {
 		setText(this.weaponName, name);
 		setText(this.weaponAmmo, clip === null ? '' : reloading ? 'RELOADING' : `${clip} / ${reserve}`);
 		this.weaponAmmo.classList.toggle('empty', clip === 0 && !reloading);
+	}
+
+	setClock(text: string): void {
+		setText(this.clock, text);
+	}
+
+	setVehicle(name: string | null, kmh: number, health: number): void {
+		this.vehiclePanel.classList.toggle('hidden', name === null);
+		if (name === null) return;
+		setText(this.speed, `${Math.round(kmh)}`);
+		setText(this.vehicleName, name);
+		setWidth(this.vehicleHealth, health * 100);
+		this.vehicleBar.classList.toggle('low', health < 0.3);
 	}
 
 	showBanner(title: string, sub: string, kind: string): void {
@@ -173,6 +206,11 @@ export class Hud {
 		this.wanted.classList.toggle('active', wd.level > 0);
 		this.arrestBar.classList.toggle('hidden', wd.arrest <= 0.01);
 		setWidth(this.arrestFill, wd.arrest * 100);
+		if (this.deltaTimer > 0) {
+			this.deltaTimer -= dt;
+			if (this.deltaTimer <= 0) this.moneyDelta.classList.remove('show');
+		}
+		setText(this.money, formatMoney(world.economy.cash));
 		if (this.bannerTimer > 0) {
 			this.bannerTimer -= dt;
 			if (this.bannerTimer <= 0) this.banner.classList.add('hidden');

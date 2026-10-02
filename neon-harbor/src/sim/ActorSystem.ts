@@ -87,6 +87,12 @@ export class ActorSystem {
 		this.pool.push(a);
 	}
 
+	/** Removes every actor (new game / load). */
+	clear(): void {
+		for (const a of [...this.list]) this.despawn(a);
+		this.hash.clear();
+	}
+
 	private dress(a: Actor): void {
 		const r = this.world.rng;
 		const style = FACTION_STYLES[a.faction];
