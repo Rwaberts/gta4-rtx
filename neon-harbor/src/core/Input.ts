@@ -68,6 +68,11 @@ export class Input {
 	mouseDX = 0;
 	mouseDY = 0;
 	pointerLocked = false;
+	/**
+	 * Fallback when the page may not capture the mouse (some embedded / sandboxed pages):
+	 * plain mouse movement over the game turns the camera instead.
+	 */
+	freeLook = false;
 	/** When false (menus open) gameplay input is ignored. */
 	enabled = true;
 	private target: HTMLElement | null = null;
@@ -89,15 +94,20 @@ export class Input {
 			// Mouse releases can be lost while the lock changes hands.
 			for (const c of [...this.down]) if (c.startsWith('Mouse')) this.release(c);
 		});
+		document.addEventListener('pointerlockerror', () => (this.freeLook = true));
 	}
 
 	requestPointerLock(): void {
 		if (!this.target || this.pointerLocked) return;
+		if (typeof this.target.requestPointerLock !== 'function') {
+			this.freeLook = true;
+			return;
+		}
 		try {
 			const p = this.target.requestPointerLock() as unknown;
-			if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => {});
+			if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => (this.freeLook = true));
 		} catch {
-			/* not available (headless) */
+			this.freeLook = true;
 		}
 	}
 
@@ -123,7 +133,7 @@ export class Input {
 	private onMouseUp = (e: MouseEvent): void => this.release('Mouse' + e.button);
 
 	private onMouseMove = (e: MouseEvent): void => {
-		if (!this.pointerLocked) return;
+		if (!this.pointerLocked && !(this.freeLook && e.target === this.target)) return;
 		// Browsers can emit one large bogus delta right after the lock is acquired.
 		if (performance.now() - this.lockTime < 150) return;
 		if (Math.abs(e.movementX) > 350 || Math.abs(e.movementY) > 350) return;

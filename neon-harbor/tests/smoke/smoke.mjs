@@ -73,10 +73,14 @@ scenario('new-game', async () => {
 
 scenario('walk-and-sprint', async () => {
 	const before = await game(() => ({ x: window.__NH__.world.player.x, z: window.__NH__.world.player.z }));
-	await hold('KeyW', 1200);
+	// Software GL runs far below real time, so wait on distance rather than wall clock.
+	await page.keyboard.down('KeyW');
 	await page.keyboard.down('ShiftLeft');
-	await hold('KeyW', 1200);
+	await page
+		.waitForFunction((b) => Math.hypot(window.__NH__.world.player.x - b.x, window.__NH__.world.player.z - b.z) > 3, before, { timeout: 40000 })
+		.catch(() => {});
 	await page.keyboard.up('ShiftLeft');
+	await page.keyboard.up('KeyW');
 	const after = await game(() => ({ x: window.__NH__.world.player.x, z: window.__NH__.world.player.z, stamina: window.__NH__.world.player.stamina }));
 	const moved = Math.hypot(after.x - before.x, after.z - before.z);
 	if (moved < 2) throw new Error('player did not move: ' + moved.toFixed(2));
