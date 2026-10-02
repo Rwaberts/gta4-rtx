@@ -8,13 +8,13 @@ import { headingTo } from '../../core/math';
 import { WORLD } from '../../data/config';
 import { DISTRICTS } from '../../data/districts';
 import type { Cell, Poi } from '../../world/CityLayout';
-import type { Actor, ActorBrain } from '../Actor';
+import type { Actor, ActorBrain, ThreatKind } from '../Actor';
 import type { CrimeType } from '../events';
 import type { Vehicle } from '../Vehicle';
 import type { World } from '../World';
 
 export type CivState = 'wander' | 'idle' | 'talk' | 'shop' | 'flee' | 'cower' | 'callPolice' | 'enterVehicle';
-export type ThreatKind = 'gunshot' | 'explosion' | 'crime' | 'aimedAt' | 'carDanger' | 'attacked';
+export type { ThreatKind } from '../Actor';
 
 interface Ctx {
 	a: Actor;

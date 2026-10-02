@@ -201,4 +201,53 @@ export function register({ scenario, page, game, sleep, hold, shot }) {
 		await shot('41-in-custody');
 		if (!ok) throw new Error('player was not arrested');
 	});
+
+	scenario('mission-start', async () => {
+		await game(() => {
+			const g = window.__NH__;
+			const w = g.world;
+			w.wanted.clear(true);
+			w.player.invulnerable = true;
+			const poi = w.city.poi('contact_rosa');
+			w.player.teleport(poi.x + Math.sin(poi.facing) * 1.2, poi.z + Math.cos(poi.facing) * 1.2, poi.facing + Math.PI);
+			g.cam.yaw = poi.facing + Math.PI;
+		});
+		await page.waitForFunction(() => !!window.__NH__.world.interactions.current, null, { timeout: 20000 });
+		await page.keyboard.press('KeyE');
+		await page.waitForFunction(() => !!window.__NH__.world.missions.active, null, { timeout: 20000 });
+		await sleep(1200);
+		await shot('50-mission-start');
+		const title = await game(() => window.__NH__.world.missions.title);
+		return `started "${title}"`;
+	});
+
+	scenario('mission-pier', async () => {
+		await game(() => {
+			const g = window.__NH__;
+			const w = g.world;
+			const pier = w.city.piers[1];
+			w.player.teleport(pier.minX + 25, (pier.minZ + pier.maxZ) / 2 - 6, Math.PI / 2);
+			g.cam.yaw = Math.PI / 2;
+			g.cam.pitch = 0.2;
+			g.simulate(0.5);
+		});
+		await sleep(2500);
+		await shot('51-mission-pier');
+		const idx = await game(() => window.__NH__.world.missions.active?.index ?? -1);
+		if (idx !== 1) throw new Error('expected objective 1 (take the van), got ' + idx);
+		await game(() => window.__NH__.world.missions.abandon());
+	});
+
+	scenario('interior', async () => {
+		await game(() => {
+			const w = window.__NH__.world;
+			const inst = w.interiors.instanceFor('weapons_downtown');
+			w.interiors.enter(inst);
+		});
+		await sleep(2500);
+		await shot('52-interior');
+		const inside = await game(() => !!window.__NH__.world.interiors.current);
+		if (!inside) throw new Error('not inside');
+		await game(() => window.__NH__.world.interiors.exit());
+	});
 }

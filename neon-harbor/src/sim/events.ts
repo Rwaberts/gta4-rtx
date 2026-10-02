@@ -66,6 +66,11 @@ export interface GameEvents {
 	objective: { text: string };
 	dialogue: { speaker: string; text: string; duration: number };
 
+	// Places
+	interiorChanged: { id: string | null; name: string };
+	openShop: { shop: string; poi: string };
+	requestSave: { where: string };
+
 	// Presentation
 	sound: { id: string; x?: number; z?: number; volume?: number };
 	shake: { amount: number };

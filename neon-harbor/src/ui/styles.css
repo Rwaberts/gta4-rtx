@@ -567,3 +567,91 @@ body {
 		opacity: 0;
 	}
 }
+
+.hud-objective {
+	position: absolute;
+	left: 50%;
+	bottom: 30px;
+	transform: translateX(-50%);
+	font-size: 17px;
+	color: #fff;
+	text-shadow: 0 2px 8px rgba(0, 0, 0, 0.95);
+	letter-spacing: 0.03em;
+	max-width: 60vw;
+	text-align: center;
+}
+.hud-objective::before {
+	content: '◆ ';
+	color: var(--nh-amber);
+}
+.hud-dialogue {
+	position: absolute;
+	left: 50%;
+	bottom: 70px;
+	transform: translateX(-50%);
+	max-width: 62vw;
+	text-align: center;
+	font-size: 16px;
+	line-height: 1.4;
+	color: #f0f0f0;
+	background: rgba(4, 8, 14, 0.6);
+	padding: 8px 16px;
+	opacity: 0;
+	transition: opacity 0.25s;
+}
+.hud-dialogue.show {
+	opacity: 1;
+}
+.hud-dialogue .speaker {
+	color: var(--nh-teal);
+	font-weight: 700;
+}
+.hud-banner {
+	position: absolute;
+	left: 50%;
+	top: 22%;
+	transform: translateX(-50%);
+	text-align: center;
+	animation: banner-in 0.5s ease-out;
+}
+.hud-banner .title {
+	font-size: 44px;
+	font-weight: 800;
+	letter-spacing: 0.22em;
+	text-transform: uppercase;
+}
+.hud-banner .sub {
+	margin-top: 6px;
+	font-size: 16px;
+	letter-spacing: 0.12em;
+	color: #e8f4f2;
+	text-shadow: 0 1px 6px #000;
+}
+.hud-banner.start .title {
+	color: var(--nh-magenta);
+	text-shadow: 0 0 18px rgba(255, 74, 216, 0.6);
+}
+.hud-banner.passed .title {
+	color: var(--nh-amber);
+	text-shadow: 0 0 22px rgba(255, 179, 71, 0.7);
+}
+.hud-banner.failed .title {
+	color: var(--nh-red);
+	text-shadow: 0 0 22px rgba(255, 74, 90, 0.7);
+}
+@keyframes banner-in {
+	from {
+		opacity: 0;
+		transform: translate(-50%, -12px);
+	}
+}
+.hud-progress {
+	position: absolute;
+	left: 50%;
+	top: 58%;
+	transform: translateX(-50%);
+	width: 260px;
+}
+.hud-progress .bar > div {
+	background: linear-gradient(90deg, var(--nh-amber), #fff27a);
+}

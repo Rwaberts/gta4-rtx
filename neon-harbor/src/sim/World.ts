@@ -12,6 +12,11 @@ import { ActorSystem } from './ActorSystem';
 import { CombatSystem } from './CombatSystem';
 import { PoliceSystem } from './PoliceSystem';
 import { WantedSystem } from './WantedSystem';
+import { Economy } from './Economy';
+import { InteractionSystem } from './InteractionSystem';
+import { InteriorSystem } from './InteriorSystem';
+import { MissionSystem } from './MissionSystem';
+import { STARTING_CASH } from '../data/economy';
 import type { Actor } from './Actor';
 import { Clock } from './Clock';
 import { TrafficSystem } from './TrafficSystem';
@@ -44,6 +49,10 @@ export class World {
 	readonly combat: CombatSystem;
 	readonly wanted: WantedSystem;
 	readonly police: PoliceSystem;
+	readonly economy: Economy;
+	readonly interactions: InteractionSystem;
+	readonly interiors: InteriorSystem;
+	readonly missions: MissionSystem;
 	/**
 	 * Aim ray (normally the camera's centre ray). `skip` ignores hits between camera and player.
 	 * When `fromCamera` is false (headless) it is derived from the player's heading each step.
@@ -74,6 +83,10 @@ export class World {
 		this.combat = new CombatSystem(this);
 		this.wanted = new WantedSystem(this);
 		this.police = new PoliceSystem(this);
+		this.economy = new Economy(this, STARTING_CASH);
+		this.interactions = new InteractionSystem(this);
+		this.interiors = new InteriorSystem(this);
+		this.missions = new MissionSystem(this);
 		const home = this.city.poi('safehouse')!;
 		this.player.teleport(home.x + Math.sin(home.facing) * 3, home.z + Math.cos(home.facing) * 3, home.facing);
 	}
@@ -91,6 +104,8 @@ export class World {
 		this.actors.step(dt);
 		this.traffic.step(dt);
 		this.police.step(dt);
+		this.interactions.step();
+		this.missions.update(dt);
 		p.updateVitals(dt);
 		this.updateDeath(dt);
 		this.updateDistrict(dt);
@@ -226,7 +241,7 @@ export class World {
 
 	private updateDistrict(dt: number): void {
 		this.districtTimer -= dt;
-		if (this.districtTimer > 0) return;
+		if (this.districtTimer > 0 || this.interiors.current) return;
 		this.districtTimer = 0.5;
 		const d = this.city.districtAt(this.player.px, this.player.pz);
 		if (d !== this.currentDistrict) {

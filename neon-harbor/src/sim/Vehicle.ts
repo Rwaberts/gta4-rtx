@@ -106,6 +106,8 @@ export class Vehicle {
 	}
 
 	init(def: VehicleDef, x: number, z: number, heading: number, color: number): this {
+		// Pooled objects get a fresh identity per spawn.
+		this.id = nextVehicleId++;
 		this.def = def;
 		this.color = color;
 		this.x = x;

@@ -34,6 +34,16 @@ export class Hud {
 	private overlay = el('div', { class: 'hud-overlay hidden' });
 	private overlayTitle = el('div', { class: 'title' });
 	private overlaySub = el('div', { class: 'sub' });
+	private objective = el('div', { class: 'hud-objective hidden' });
+	private dialogue = el('div', { class: 'hud-dialogue' });
+	private dialogueQueue: Array<{ speaker: string; text: string; duration: number }> = [];
+	private dialogueTimer = 0;
+	private banner = el('div', { class: 'hud-banner hidden' });
+	private bannerTitle = el('div', { class: 'title' });
+	private bannerSub = el('div', { class: 'sub' });
+	private bannerTimer = 0;
+	private progress = el('div', { class: 'hud-progress hidden' });
+	private progressFill = el('div');
 	private hitTimer = 0;
 	private districtTimer = 0;
 	debugVisible = false;
@@ -50,7 +60,18 @@ export class Hud {
 		}
 		this.arrestBar.append(el('span', { text: 'ARREST' }), el('div', { class: 'bar' }, this.arrestFill));
 		this.overlay.append(this.overlayTitle, this.overlaySub);
-		this.root.append(this.weapon, this.wanted, this.arrestBar, this.radio, this.overlay);
+		this.banner.append(this.bannerTitle, this.bannerSub);
+		this.progress.append(el('div', { class: 'bar' }, this.progressFill));
+		this.root.append(this.weapon, this.wanted, this.arrestBar, this.radio, this.objective, this.dialogue, this.banner, this.progress, this.overlay);
+		world.bus.on('objective', (o) => {
+			this.objective.classList.toggle('hidden', !o.text);
+		});
+		world.bus.on('dialogue', (d) => {
+			this.dialogueQueue.push({ speaker: d.speaker, text: d.text, duration: d.duration });
+		});
+		world.bus.on('missionStarted', (m) => this.showBanner(m.title, 'Mission started', 'start'));
+		world.bus.on('missionCompleted', (m) => this.showBanner('MISSION PASSED', `${m.title}  ·  +$${m.reward.toLocaleString('en-US')}`, 'passed'));
+		world.bus.on('missionFailed', (m) => this.showBanner('MISSION FAILED', m.reason, 'failed'));
 		world.bus.on('radio', (r) => {
 			setText(this.radio, r.text);
 			this.radio.classList.add('show');
@@ -83,6 +104,23 @@ export class Hud {
 		setText(this.weaponName, name);
 		setText(this.weaponAmmo, clip === null ? '' : reloading ? 'RELOADING' : `${clip} / ${reserve}`);
 		this.weaponAmmo.classList.toggle('empty', clip === 0 && !reloading);
+	}
+
+	showBanner(title: string, sub: string, kind: string): void {
+		setText(this.bannerTitle, title);
+		setText(this.bannerSub, sub);
+		this.banner.className = 'hud-banner ' + kind;
+		this.bannerTimer = 4.5;
+	}
+
+	setObjective(text: string): void {
+		setText(this.objective, text);
+		this.objective.classList.toggle('hidden', !text);
+	}
+
+	setProgress(v: number | null): void {
+		this.progress.classList.toggle('hidden', v === null);
+		if (v !== null) setWidth(this.progressFill, v * 100);
 	}
 
 	showOverlay(title: string, sub: string, kind: string): void {
@@ -135,6 +173,21 @@ export class Hud {
 		this.wanted.classList.toggle('active', wd.level > 0);
 		this.arrestBar.classList.toggle('hidden', wd.arrest <= 0.01);
 		setWidth(this.arrestFill, wd.arrest * 100);
+		if (this.bannerTimer > 0) {
+			this.bannerTimer -= dt;
+			if (this.bannerTimer <= 0) this.banner.classList.add('hidden');
+		}
+		// Dialogue subtitles play one line at a time.
+		if (this.dialogueTimer > 0) this.dialogueTimer -= dt;
+		if (this.dialogueTimer <= 0) {
+			const next = this.dialogueQueue.shift();
+			if (next) {
+				this.dialogue.innerHTML = '';
+				this.dialogue.append(el('span', { class: 'speaker', text: next.speaker + ': ' }), document.createTextNode(next.text));
+				this.dialogue.classList.add('show');
+				this.dialogueTimer = next.duration;
+			} else this.dialogue.classList.remove('show');
+		}
 		if (this.radioTimer > 0) {
 			this.radioTimer -= dt;
 			if (this.radioTimer <= 0) this.radio.classList.remove('show');

@@ -207,6 +207,8 @@ export class CityLayout {
 
 	isLand(x: number, z: number): boolean {
 		if (rectContains(this.land, x, z)) return true;
+		// Interior rooms live far outside the city on solid ground.
+		if (x > WORLD.interiorOrigin.x - 100 && z > WORLD.interiorOrigin.z - 100) return true;
 		for (const p of this.piers) if (rectContains(p, x, z)) return true;
 		return false;
 	}

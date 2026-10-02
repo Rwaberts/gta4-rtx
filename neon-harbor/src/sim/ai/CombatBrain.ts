@@ -94,9 +94,22 @@ const TABLE: StateTable<Ctx, CombatState> = {
 		},
 	},
 	follow: {
-		// Allies (mission escorts) follow the player and return fire.
+		// Allies (mission escorts) follow the player, ride along as passengers and return fire.
 		update: ({ a, w, b }, dt) => {
 			const p = w.player;
+			if (p.state === 'driving' && p.vehicle && !p.vehicle.destroyed) {
+				const v = p.vehicle;
+				const door = v.doorPoint(1);
+				const dd = Math.hypot(door.x - a.x, door.z - a.z);
+				if (dd < 2.2 && v.speed < 3) {
+					a.vehicle = v;
+					a.aiming = false;
+					v.passengers.push(a);
+					return;
+				}
+				a.setTarget(door.x, door.z, dd > 8 ? 5.2 : 3, 1.5);
+				return;
+			}
 			const d = Math.hypot(p.px - a.x, p.pz - a.z);
 			if (d > 4) a.setTarget(p.px, p.pz, d > 10 ? 5 : 2.2, 3);
 			else a.stop();

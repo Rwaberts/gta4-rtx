@@ -63,6 +63,8 @@ export class CameraController {
 	snapTo(target: CameraTarget): void {
 		this.pivotInit = false;
 		this.yaw = target.heading;
+		this.pitch = this.mode === 'interior' ? 0.35 : 0.25;
+		this.dist = this.mode === 'interior' ? 2.8 : this.dist;
 		this.update(1, 0, 0, target);
 	}
 
@@ -103,7 +105,7 @@ export class CameraController {
 			}
 			if (t.lookBehind) this.yaw = wrapAngle(t.heading + Math.PI);
 		} else if (this.mode === 'interior') {
-			targetDist = 3.2;
+			targetDist = 2.8;
 			if (t.aiming) {
 				targetDist = CAMERA.aimDistance * 0.8;
 				targetShoulder = CAMERA.aimShoulder * 0.8;

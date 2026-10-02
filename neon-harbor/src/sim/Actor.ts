@@ -2,8 +2,11 @@
 // Plain data + a pluggable brain; the ActorSystem owns movement, LOD and pooling.
 
 import type { Cell } from '../world/CityLayout';
+import type { CrimeType } from './events';
 import type { Vehicle } from './Vehicle';
 import type { World } from './World';
+
+export type ThreatKind = 'gunshot' | 'explosion' | 'crime' | 'aimedAt' | 'carDanger' | 'attacked';
 
 export type ActorRole = 'civilian' | 'police' | 'gang' | 'mission' | 'clerk';
 export type Faction = 'civilian' | 'police' | 'saltline' | 'velvet' | 'rustline' | 'crew';
@@ -14,6 +17,8 @@ export interface ActorBrain {
 	/** Debug label of the current state. */
 	readonly state: string;
 	dispose?(a: Actor): void;
+	/** Event-driven reaction to threats (civilians, clerks). */
+	react?(a: Actor, w: World, kind: ThreatKind, x: number, z: number, crime?: CrimeType): void;
 }
 
 let nextActorId = 1;
@@ -106,6 +111,7 @@ export class Actor {
 	stateTime = 0;
 
 	reset(): void {
+		this.id = nextActorId++;
 		this.active = false;
 		this.role = 'civilian';
 		this.faction = 'civilian';

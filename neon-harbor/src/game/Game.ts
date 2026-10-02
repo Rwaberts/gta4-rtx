@@ -11,6 +11,9 @@ import { VehicleRenderer } from '../render/VehicleRenderer';
 import { Effects } from '../render/Effects';
 import { SignalRenderer } from '../render/SignalRenderer';
 import { HeliRenderer } from '../render/HeliRenderer';
+import { MarkerRenderer } from '../render/MarkerRenderer';
+import { InteriorRenderer } from '../render/InteriorRenderer';
+import type { MissionMarker } from '../sim/MissionSystem';
 import { CameraController, type CameraTarget } from './CameraController';
 import { Hud } from '../ui/Hud';
 import { Menus } from '../ui/Menus';
@@ -31,6 +34,10 @@ export class Game {
 	readonly effects: Effects;
 	readonly signals: SignalRenderer;
 	readonly heli: HeliRenderer;
+	readonly markers: MarkerRenderer;
+	readonly interiorViews: InteriorRenderer;
+	private markerList: MissionMarker[] = [];
+	private retryPending = false;
 	private readonly npcPose: HumanoidPose = defaultPose();
 	private grenadeMeshes: THREE.Mesh[] = [];
 	private readonly grenadeGeo = new THREE.SphereGeometry(0.12, 8, 6);
@@ -66,6 +73,15 @@ export class Game {
 		this.effects = new Effects(this.graphics.scene);
 		this.signals = new SignalRenderer(this.graphics.scene, this.world.roads);
 		this.heli = new HeliRenderer(this.graphics.scene);
+		this.markers = new MarkerRenderer(this.graphics.scene);
+		this.interiorViews = new InteriorRenderer(this.graphics.scene, this.world.interiors.instances);
+		this.world.bus.on('missionFailed', () => (this.retryPending = true));
+		this.world.bus.on('interiorChanged', () => {
+			// Doors teleport the player: put the camera straight behind them.
+			this.fillCamTarget();
+			this.cam.setMode(this.world.interiors.current ? 'interior' : 'foot');
+			this.cam.snapTo(this.camTarget);
+		});
 		this.hookEffects();
 		this.input.attach(this.graphics.renderer.domElement);
 		this.hud = new Hud(ui, this.world);
@@ -242,11 +258,11 @@ export class Game {
 
 	private frame = (now: number): void => {
 		requestAnimationFrame(this.frame);
-		let dt = (now - this.last) / 1000;
+		const raw = Math.max(1e-4, (now - this.last) / 1000);
 		this.last = now;
-		if (dt > 0.1) dt = 0.1;
-		if (dt <= 0) dt = 1 / 60;
-		this.fpsTime += dt;
+		// Clamp simulation time so a stall (tab switch, GC) cannot explode the physics.
+		const dt = Math.min(raw, 0.1);
+		this.fpsTime += raw;
 		this.fpsFrames++;
 		if (this.fpsTime >= 0.5) {
 			this.fps = this.fpsFrames / this.fpsTime;
@@ -284,7 +300,7 @@ export class Game {
 		this.surfaceOffset += (targetOffset - this.surfaceOffset) * Math.min(1, dt * 12);
 
 		this.fillCamTarget();
-		if (this.state !== 'menu') this.cam.setMode(p.state === 'driving' ? 'vehicle' : 'foot', this.camTarget);
+		if (this.state !== 'menu') this.cam.setMode(p.state === 'driving' ? 'vehicle' : w.interiors.current ? 'interior' : 'foot', this.camTarget);
 		if (this.state === 'menu') {
 			this.cam.update(dt, 0, 0, this.camTarget);
 		} else if (this.state === 'playing') {
@@ -340,6 +356,7 @@ export class Game {
 		this.updateEffects(dt);
 
 		this.updatePrompt();
+		this.updateMissionUi(dt);
 		const inv = w.combat.inventory;
 		const wd = WEAPONS[inv.current];
 		this.hud.setWeapon(wd.name, wd.kind === 'melee' ? null : inv.state.clip, wd.kind === 'melee' ? null : inv.state.reserve, w.combat.reloading);
@@ -376,11 +393,61 @@ export class Game {
 		}
 	}
 
+	private updateMissionUi(dt: number): void {
+		const w = this.world;
+		const ms = w.missions;
+		this.hud.setObjective(ms.active ? ms.objectiveText() : '');
+		const o = ms.active ? ms.active.def.objectives[ms.active.index] : null;
+		this.hud.setProgress(o && o.type === 'hold' ? ms.progress : null);
+		ms.markers(this.markerList);
+		const city = w.city;
+		this.markers.update(this.markerList, ms.pickups, (x, z) => (w.interiors.isInterior(x, z) || city.isOnRoad(x, z) ? 0 : 0.16), dt);
+		// Offer a retry once the player is back on their feet.
+		if (this.retryPending && this.state === 'playing' && w.player.alive && w.player.state !== 'arrested') {
+			this.retryPending = false;
+			this.showRetry();
+		}
+	}
+
+	private showRetry(): void {
+		const f = this.world.missions.lastFailed;
+		if (!f) return;
+		this.state = 'paused';
+		this.input.exitPointerLock();
+		const panel = el(
+			'div',
+			{ class: 'menu-panel' },
+			el('div', { class: 'menu-title', text: 'Mission Failed' }),
+			el('p', { text: f.reason }),
+			el(
+				'div',
+				{ class: 'menu-list' },
+				button(f.checkpoint > 0 ? 'Retry from checkpoint' : 'Retry mission', () => {
+					this.menus.close();
+					this.state = 'playing';
+					this.world.missions.retry();
+					this.input.requestPointerLock();
+				}),
+				button('Not now', () => {
+					this.menus.close();
+					this.state = 'playing';
+					this.input.requestPointerLock();
+				}),
+			),
+		);
+		this.menus.openPanel(panel);
+	}
+
 	private updatePrompt(): void {
 		const w = this.world;
 		const p = w.player;
 		if (this.state !== 'playing' || p.state !== 'onFoot') {
 			this.hud.setPrompt(null);
+			return;
+		}
+		const it = w.interactions.current;
+		if (it) {
+			this.hud.setPrompt('E', it.blocked ? `${it.label} — ${it.blocked}` : it.label);
 			return;
 		}
 		const v = w.vehicles.enterCandidate();

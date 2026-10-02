@@ -7,8 +7,8 @@ import { clamp, dampAngle, headingTo } from '../core/math';
 import { SIM } from '../data/config';
 import { DISTRICTS } from '../data/districts';
 import { FACTION_STYLES, HAIR_COLORS, PANTS, SHIRTS, SKIN_TONES } from '../data/peds';
-import { Actor, type ActorRole, type Faction } from './Actor';
-import { CivilianBrain, cornerOf, type ThreatKind } from './ai/CivilianBrain';
+import { Actor, type ActorRole, type Faction, type ThreatKind } from './Actor';
+import { CivilianBrain, cornerOf } from './ai/CivilianBrain';
 import { CombatBrain } from './ai/CombatBrain';
 import { armActor } from './ai/tactics';
 import type { WeaponId } from '../data/weapons';
@@ -122,7 +122,7 @@ export class ActorSystem {
 		if (!a) return null;
 		a.vehicle = v;
 		v.driver = a;
-		if (role === 'civilian') a.brain = new CivilianBrain(a, this.world);
+		if (role === 'civilian' || role === 'mission') a.brain = new CivilianBrain(a, this.world);
 		return a;
 	}
 
@@ -161,6 +161,19 @@ export class ActorSystem {
 		v.role = 'traffic';
 		const lane = w.roads.nearestLane(v.x, v.z, v.forwardX, v.forwardZ) ?? w.roads.nearestLane(v.x, v.z);
 		if (lane) v.brain = new TrafficDriver(w, lane.lane, w.rng.range(10, 14));
+	}
+
+	unboardPassenger(a: Actor): void {
+		const v = a.vehicle;
+		if (!v) return;
+		const i = v.passengers.indexOf(a);
+		if (i >= 0) v.passengers.splice(i, 1);
+		a.vehicle = null;
+		const door = v.doorPoint(1);
+		const p = { x: door.x, z: door.z };
+		this.world.collision.resolveCircle(p, a.radius, 0, 1.8);
+		a.x = a.tx = p.x;
+		a.z = a.tz = p.z;
 	}
 
 	/** Pulls the NPC driver out (carjack, crash, fire). */
@@ -207,7 +220,7 @@ export class ActorSystem {
 			w.bus.emit('crime', { type, x: a.x, z: a.z, perpetrator: 'player', victim: a });
 		}
 		if (attacker === 'player' && a.brain instanceof CombatBrain) this.provokeGroup(a);
-		if (a.brain instanceof CivilianBrain) {
+		if (a.brain?.react) {
 			const ax = attacker === 'player' ? w.player.px : attacker ? attacker.x : a.x;
 			const az = attacker === 'player' ? w.player.pz : attacker ? attacker.z : a.z;
 			a.brain.react(a, w, 'attacked', ax, az, weapon === 'melee' ? 'assault' : 'shootCivilian');
@@ -268,7 +281,7 @@ export class ActorSystem {
 				if (a.vehicle.brain instanceof TrafficDriver && (kind === 'gunshot' || kind === 'explosion')) a.vehicle.brain.panic = 10;
 				return;
 			}
-			if (a.brain instanceof CivilianBrain) a.brain.react(a, w, kind, x, z, crime);
+			if (a.brain?.react) a.brain.react(a, w, kind, x, z, crime);
 			else if (a.brain instanceof CombatBrain && crime === 'gunfire' && (a.x - x) ** 2 + (a.z - z) ** 2 < 25 * 25) this.provokeGroup(a);
 		});
 	}
@@ -288,7 +301,7 @@ export class ActorSystem {
 
 	/** An NPC sees the player aiming at them: civilians panic, fighters take it as a threat. */
 	aimedAt(a: Actor): void {
-		if (a.brain instanceof CivilianBrain) a.brain.react(a, this.world, 'aimedAt', this.world.player.x, this.world.player.z);
+		if (a.brain?.react) a.brain.react(a, this.world, 'aimedAt', this.world.player.x, this.world.player.z);
 		else if (a.brain instanceof CombatBrain && a.faction !== 'crew') this.provokeGroup(a);
 	}
 
@@ -321,6 +334,12 @@ export class ActorSystem {
 			if (a.vehicle) {
 				a.x = a.vehicle.x;
 				a.z = a.vehicle.z;
+				// Passengers riding with the player get out when the player does.
+				const v = a.vehicle;
+				if (v.driver !== a && v.passengers.includes(a) && !(w.player.state === 'driving' && w.player.vehicle === v) && !(v.driver && v.driver !== 'player')) {
+					this.unboardPassenger(a);
+					continue;
+				}
 				// Drivers bail out of burning or sinking vehicles.
 				if ((a.vehicle.burning || a.vehicle.sinking) && a.vehicle.driver === a) this.ejectDriver(a.vehicle, false);
 				else if (a.vehicle.destroyed && a.vehicle.driver === a) this.kill(a, a.vehicle.lastDamagedBy, 'explosion');
