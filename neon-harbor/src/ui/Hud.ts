@@ -22,6 +22,10 @@ export class Hud {
 	private prompt = el('div', { class: 'hud-prompt hidden' });
 	private promptKey = el('span', { class: 'key' });
 	private promptText = el('span');
+	private weapon = el('div', { class: 'hud-weapon' });
+	private weaponName = el('div', { class: 'name' });
+	private weaponAmmo = el('div', { class: 'ammo' });
+	private hitTimer = 0;
 	private districtTimer = 0;
 	debugVisible = false;
 
@@ -29,6 +33,8 @@ export class Hud {
 		this.district.append(this.districtName, this.districtTag);
 		const vitals = el('div', { class: 'hud-vitals' }, this.healthBar, this.armorBar, this.staminaBar);
 		this.prompt.append(this.promptKey, this.promptText);
+		this.weapon.append(this.weaponName, this.weaponAmmo);
+		this.root.append(this.weapon);
 		this.root.append(this.crosshair, this.district, this.notifyBox, this.debug, vitals, this.prompt);
 		parent.append(this.root);
 		world.bus.on('notify', (n) => this.notify(n.text, n.kind, n.duration));
@@ -47,6 +53,17 @@ export class Hud {
 	toggleDebug(): void {
 		this.debugVisible = !this.debugVisible;
 		this.debug.classList.toggle('hidden', !this.debugVisible);
+	}
+
+	setWeapon(name: string, clip: number | null, reserve: number | null, reloading: boolean): void {
+		setText(this.weaponName, name);
+		setText(this.weaponAmmo, clip === null ? '' : reloading ? 'RELOADING' : `${clip} / ${reserve}`);
+		this.weaponAmmo.classList.toggle('empty', clip === 0 && !reloading);
+	}
+
+	hitMarker(kill: boolean): void {
+		this.hitTimer = kill ? 0.35 : 0.15;
+		this.crosshair.classList.add('hit');
 	}
 
 	/** Context prompt such as "[F] Enter vehicle". Pass null to hide. */
@@ -73,7 +90,11 @@ export class Hud {
 		this.armorBar.classList.toggle('hidden', p.armor <= 0);
 		setWidth(this.stamina, (p.stamina / PLAYER.maxStamina) * 100);
 		this.staminaBar.classList.toggle('hidden', p.stamina >= PLAYER.maxStamina - 0.1);
-		this.crosshair.classList.toggle('on', p.aiming && p.state === 'onFoot');
+		this.crosshair.classList.toggle('on', (p.aiming && p.state === 'onFoot') || this.hitTimer > 0);
+		if (this.hitTimer > 0) {
+			this.hitTimer -= dt;
+			if (this.hitTimer <= 0) this.crosshair.classList.remove('hit');
+		}
 
 		if (this.districtTimer > 0) {
 			this.districtTimer -= dt;

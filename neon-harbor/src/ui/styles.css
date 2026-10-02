@@ -443,3 +443,24 @@ body {
 	padding: 1px 8px;
 	border-radius: 3px;
 }
+
+.hud-weapon {
+	position: absolute;
+	right: 32px;
+	top: 86px;
+	text-align: right;
+	text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+}
+.hud-weapon .name {
+	font-size: 14px;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--nh-dim);
+}
+.hud-weapon .ammo {
+	font: 700 26px var(--nh-mono);
+	color: #fff;
+}
+.hud-weapon .ammo.empty {
+	color: var(--nh-red);
+}

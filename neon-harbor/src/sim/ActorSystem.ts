@@ -9,6 +9,9 @@ import { DISTRICTS } from '../data/districts';
 import { FACTION_STYLES, HAIR_COLORS, PANTS, SHIRTS, SKIN_TONES } from '../data/peds';
 import { Actor, type ActorRole, type Faction } from './Actor';
 import { CivilianBrain, cornerOf, type ThreatKind } from './ai/CivilianBrain';
+import { CombatBrain } from './ai/CombatBrain';
+import { armActor } from './ai/tactics';
+import type { WeaponId } from '../data/weapons';
 import { TrafficDriver } from './ai/TrafficDriver';
 import type { Cell } from '../world/CityLayout';
 import type { Attacker, CrimeType } from './events';
@@ -123,6 +126,32 @@ export class ActorSystem {
 		return a;
 	}
 
+	/** Spawns an armed gang member / mission enemy with a combat brain. */
+	spawnFighter(faction: Faction, x: number, z: number, weapon: WeaponId, opts: { hostile?: boolean; accuracy?: number; health?: number; heading?: number } = {}): Actor | null {
+		const a = this.spawn('gang', faction, x, z, opts.heading ?? 0);
+		if (!a) return null;
+		armActor(a, weapon, opts.accuracy ?? 0.45);
+		a.hostile = opts.hostile ?? false;
+		if (opts.health) a.health = a.maxHealth = opts.health;
+		a.brain = new CombatBrain(a, this.world);
+		return a;
+	}
+
+	/** Alerts every fighter of the same faction near `a` (group provocation). */
+	provokeGroup(a: Actor): void {
+		if (a.faction === 'civilian' || a.faction === 'police') return;
+		this.hash.query(a.x, a.z, 40, (o) => {
+			if (o.alive && o.faction === a.faction && o.brain instanceof CombatBrain) {
+				o.hostile = true;
+				o.brain.provoke();
+			}
+		});
+		if (a.brain instanceof CombatBrain) {
+			a.hostile = true;
+			a.brain.provoke();
+		}
+	}
+
 	/** An on-foot NPC takes a parked vehicle and drives off into traffic. */
 	boardVehicle(a: Actor, v: Vehicle): void {
 		const w = this.world;
@@ -177,6 +206,7 @@ export class ActorSystem {
 			const type: CrimeType = a.role === 'police' ? 'assaultPolice' : weapon === 'melee' ? 'assault' : 'shootCivilian';
 			w.bus.emit('crime', { type, x: a.x, z: a.z, perpetrator: 'player', victim: a });
 		}
+		if (attacker === 'player' && a.brain instanceof CombatBrain) this.provokeGroup(a);
 		if (a.brain instanceof CivilianBrain) {
 			const ax = attacker === 'player' ? w.player.px : attacker ? attacker.x : a.x;
 			const az = attacker === 'player' ? w.player.pz : attacker ? attacker.z : a.z;
@@ -203,6 +233,7 @@ export class ActorSystem {
 			a.hidden = true;
 		}
 		w.bus.emit('actorKilled', { actor: a, killer, weapon });
+		if (killer === 'player' && a.brain instanceof CombatBrain) this.provokeGroup(a);
 		if (killer === 'player') {
 			w.bus.emit('crime', { type: a.role === 'police' ? 'killPolice' : 'murder', x: a.x, z: a.z, perpetrator: 'player', victim: a });
 		}
@@ -238,6 +269,7 @@ export class ActorSystem {
 				return;
 			}
 			if (a.brain instanceof CivilianBrain) a.brain.react(a, w, kind, x, z, crime);
+			else if (a.brain instanceof CombatBrain && crime === 'gunfire' && (a.x - x) ** 2 + (a.z - z) ** 2 < 25 * 25) this.provokeGroup(a);
 		});
 	}
 
@@ -254,9 +286,10 @@ export class ActorSystem {
 		});
 	}
 
-	/** A civilian sees the player aiming at them. */
+	/** An NPC sees the player aiming at them: civilians panic, fighters take it as a threat. */
 	aimedAt(a: Actor): void {
 		if (a.brain instanceof CivilianBrain) a.brain.react(a, this.world, 'aimedAt', this.world.player.x, this.world.player.z);
+		else if (a.brain instanceof CombatBrain && a.faction !== 'crew') this.provokeGroup(a);
 	}
 
 	// --------------------------------------------------------------------- step

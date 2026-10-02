@@ -14,6 +14,8 @@ import { CameraController, type CameraTarget } from './CameraController';
 import { Hud } from '../ui/Hud';
 import { Menus } from '../ui/Menus';
 import { button, el } from '../ui/dom';
+import * as THREE from 'three';
+import { WEAPONS } from '../data/weapons';
 
 export type GameState = 'menu' | 'playing' | 'paused';
 
@@ -28,6 +30,9 @@ export class Game {
 	readonly effects: Effects;
 	readonly signals: SignalRenderer;
 	private readonly npcPose: HumanoidPose = defaultPose();
+	private grenadeMeshes: THREE.Mesh[] = [];
+	private readonly grenadeGeo = new THREE.SphereGeometry(0.12, 8, 6);
+	private readonly grenadeMat = new THREE.MeshLambertMaterial({ color: 0x2a3a2a });
 	readonly hud: Hud;
 	readonly menus: Menus;
 	state: GameState = 'menu';
@@ -108,6 +113,18 @@ export class Game {
 			if (e.vehicle.driver === 'player' || e.other?.driver === 'player') this.cam.addShake(Math.min(0.8, e.speed * 0.04));
 		});
 		bus.on('shake', (e) => this.cam.addShake(e.amount));
+		bus.on('shot', (e) => {
+			const fx = this.effects;
+			fx.muzzle(e.fx, e.fy, e.fz, e.tx - e.fx, e.ty - e.fy, e.tz - e.fz);
+			if (e.weapon !== 'shotgun' || Math.random() < 0.35) fx.tracer(e.fx, e.fy, e.fz, e.tx, e.ty, e.tz);
+			if (e.hit === 'metal') fx.sparks(e.tx, e.ty, e.tz, e.nx, e.ny, e.nz, 5);
+			else if (e.hit === 'world' || e.hit === 'flesh') fx.impactPuff(e.tx, e.ty, e.tz, e.hit);
+		});
+		bus.on('recoil', (e) => {
+			this.cam.pitch -= e.amount * (0.6 + Math.random() * 0.6);
+			this.cam.yaw += (Math.random() - 0.5) * e.amount * 0.6;
+		});
+		bus.on('hitConfirm', (e) => this.hud.hitMarker(e.kill));
 	}
 
 	start(): void {
@@ -278,6 +295,16 @@ export class Game {
 		w.view.z = cam.position.z;
 		w.view.dirX = fwd.x / fl;
 		w.view.dirZ = fwd.z / fl;
+		const aim = w.aim;
+		aim.fromCamera = true;
+		aim.ox = cam.position.x;
+		aim.oy = cam.position.y;
+		aim.oz = cam.position.z;
+		aim.dx = fwd.x;
+		aim.dy = fwd.y;
+		aim.dz = fwd.z;
+		// Ignore anything between the camera and the player.
+		aim.skip = Math.max(0.5, (p.px - cam.position.x) * fwd.x + (p.y + 1.4 - cam.position.y) * fwd.y + (p.pz - cam.position.z) * fwd.z);
 
 		// Humanoids.
 		this.humans.begin();
@@ -290,7 +317,10 @@ export class Game {
 			pose.walkPhase = p.animPhase;
 			pose.walkAmount = Math.min(1, p.speed / 5) * (p.onGround || p.swimming ? 1 : 0.2);
 			pose.crouch += ((p.crouching ? 1 : 0) - pose.crouch) * Math.min(1, dt * 10);
-			pose.aim = p.aiming ? 1 : 0;
+			const wdef = w.combat.inventory.def;
+			pose.armed = wdef.pose;
+			pose.aim = p.aiming && wdef.kind === 'hitscan' ? 1 : 0;
+			pose.punch = p.punchTimer > 0 ? Math.min(1, p.punchTimer / 0.15) : 0;
 			pose.dead = p.state === 'dead' ? Math.min(1, pose.dead + dt * 2) : 0;
 			this.humans.add(pose);
 		}
@@ -305,6 +335,9 @@ export class Game {
 		this.updateEffects(dt);
 
 		this.updatePrompt();
+		const inv = w.combat.inventory;
+		const wd = WEAPONS[inv.current];
+		this.hud.setWeapon(wd.name, wd.kind === 'melee' ? null : inv.state.clip, wd.kind === 'melee' ? null : inv.state.reserve, w.combat.reloading);
 		this.hud.update(dt, w, this.debugText());
 		this.graphics.render();
 	}
@@ -355,7 +388,22 @@ export class Game {
 		this.hud.setPrompt(null);
 	}
 
+	private syncGrenades(): void {
+		const list = this.world.combat.grenades;
+		while (this.grenadeMeshes.length < list.length) {
+			const m = new THREE.Mesh(this.grenadeGeo, this.grenadeMat);
+			this.graphics.scene.add(m);
+			this.grenadeMeshes.push(m);
+		}
+		this.grenadeMeshes.forEach((m, i) => {
+			const g = list[i];
+			m.visible = !!g && g.active;
+			if (m.visible) m.position.set(g.x, g.y, g.z);
+		});
+	}
+
 	private updateEffects(dt: number): void {
+		this.syncGrenades();
 		const cam = this.graphics.camera.position;
 		if (this.state === 'playing') {
 			for (const v of this.world.vehicles.list) {

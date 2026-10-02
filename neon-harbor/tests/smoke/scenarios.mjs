@@ -110,4 +110,52 @@ export function register({ scenario, page, game, sleep, hold, shot }) {
 		if (fleeing < 1) throw new Error('nobody reacted to the gunshot');
 		return `${fleeing} civilians fleeing/cowering`;
 	});
+
+	scenario('firefight', async () => {
+		await game(() => {
+			const g = window.__NH__;
+			const w = g.world;
+			const p = w.player;
+			p.invulnerable = true;
+			w.combat.inventory.give('rifle', 120);
+			w.combat.inventory.select('rifle');
+			const yaw = g.cam.yaw;
+			for (let i = 0; i < 3; i++) {
+				const d = 14 + i * 3;
+				w.actors.spawnFighter('saltline', p.x + Math.sin(yaw) * d + (i - 1) * 2.5, p.z + Math.cos(yaw) * d, 'pistol', { hostile: true });
+			}
+		});
+		await page.mouse.move(640, 360);
+		await page.mouse.down({ button: 'right' });
+		await sleep(600);
+		await page.mouse.down({ button: 'left' });
+		await page
+			.waitForFunction(() => window.__NH__.world.actors.list.some((a) => a.faction === 'saltline' && a.health < a.maxHealth), null, { timeout: 30000 })
+			.catch(() => {});
+		await shot('30-firefight');
+		await page.mouse.up({ button: 'left' });
+		await page.mouse.up({ button: 'right' });
+		const r = await game(() => {
+			const w = window.__NH__.world;
+			const gang = w.actors.list.filter((a) => a.faction === 'saltline');
+			return { hurt: gang.filter((a) => a.health < a.maxHealth).length, attacking: gang.filter((a) => a.brain && a.brain.state === 'attack').length, ammo: w.combat.inventory.totalAmmo('rifle') };
+		});
+		if (r.ammo >= 120) throw new Error('rifle did not fire');
+		return `gang hurt ${r.hurt}, attacking ${r.attacking}, rifle ammo ${r.ammo}`;
+	});
+
+	scenario('grenade', async () => {
+		await game(() => {
+			const w = window.__NH__.world;
+			w.combat.inventory.give('grenade', 2);
+		});
+		await page.keyboard.press('Digit6');
+		await sleep(400);
+		await page.mouse.down({ button: 'left' });
+		await sleep(100);
+		await page.mouse.up({ button: 'left' });
+		await page.waitForFunction(() => window.__NH__.effects.liveParticles > 40, null, { timeout: 30000 });
+		await shot('31-grenade');
+		await game(() => (window.__NH__.world.player.invulnerable = false));
+	});
 }

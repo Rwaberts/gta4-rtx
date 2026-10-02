@@ -40,6 +40,9 @@ export interface GameEvents {
 	actorDamaged: { actor: Actor; amount: number; attacker: Attacker };
 	actorKilled: { actor: Actor; killer: Attacker; weapon: string };
 	playerDamaged: { amount: number; attacker: Attacker };
+	hitConfirm: { kill: boolean };
+	recoil: { amount: number };
+	aimedAtActor: { actor: Actor };
 	playerDied: { cause: string };
 	playerArrested: { by: Actor | null };
 	playerRespawned: { where: string; reason: 'death' | 'arrest' };

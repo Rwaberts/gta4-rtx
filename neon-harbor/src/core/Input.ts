@@ -86,6 +86,8 @@ export class Input {
 		document.addEventListener('pointerlockchange', () => {
 			this.pointerLocked = document.pointerLockElement === this.target;
 			this.lockTime = performance.now();
+			// Mouse releases can be lost while the lock changes hands.
+			for (const c of [...this.down]) if (c.startsWith('Mouse')) this.release(c);
 		});
 	}
 
@@ -112,7 +114,10 @@ export class Input {
 	private onKeyUp = (e: KeyboardEvent): void => this.release(e.code);
 
 	private onMouseDown = (e: MouseEvent): void => {
-		this.press('Mouse' + e.button);
+		// A real mousedown is always a new press, even if a previous mouseup was missed.
+		const code = 'Mouse' + e.button;
+		this.down.delete(code);
+		this.press(code);
 	};
 
 	private onMouseUp = (e: MouseEvent): void => this.release('Mouse' + e.button);

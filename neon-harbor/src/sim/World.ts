@@ -9,6 +9,7 @@ import { generateCity, type CityLayout } from '../world/CityLayout';
 import { StaticCollision } from '../world/StaticCollision';
 import { RoadNetwork } from '../world/RoadNetwork';
 import { ActorSystem } from './ActorSystem';
+import { CombatSystem } from './CombatSystem';
 import { Clock } from './Clock';
 import { TrafficSystem } from './TrafficSystem';
 import { clearEdges, createControls, type PlayerControls } from './controls';
@@ -37,6 +38,12 @@ export class World {
 	readonly clock = new Clock(9);
 	readonly actors: ActorSystem;
 	readonly traffic: TrafficSystem;
+	readonly combat: CombatSystem;
+	/**
+	 * Aim ray (normally the camera's centre ray). `skip` ignores hits between camera and player.
+	 * When `fromCamera` is false (headless) it is derived from the player's heading each step.
+	 */
+	readonly aim = { ox: 0, oy: 1.5, oz: 0, dx: 0, dy: 0, dz: 1, skip: 0, fromCamera: false };
 	/** Camera position and look direction (spawners avoid popping objects into view). */
 	readonly view = { x: 0, z: 0, dirX: 0, dirZ: 1 };
 	/** Simulation seconds since start. */
@@ -59,6 +66,7 @@ export class World {
 		this.vehicles = new VehicleSystem(this);
 		this.actors = new ActorSystem(this);
 		this.traffic = new TrafficSystem(this);
+		this.combat = new CombatSystem(this);
 		const home = this.city.poi('safehouse')!;
 		this.player.teleport(home.x + Math.sin(home.facing) * 3, home.z + Math.cos(home.facing) * 3, home.facing);
 	}
@@ -68,14 +76,31 @@ export class World {
 		this.clock.update(dt);
 		this.processExplosions();
 		const p = this.player;
+		if (!this.aim.fromCamera) this.aimFromHeading();
+		this.combat.preStep();
 		if (p.state === 'onFoot') p.updateOnFoot(dt, this.controls, this);
 		this.vehicles.step(dt);
+		this.combat.step(dt);
 		this.actors.step(dt);
 		this.traffic.step(dt);
 		p.updateVitals(dt);
 		this.updateDeath(dt);
 		this.updateDistrict(dt);
 		clearEdges(this.controls);
+	}
+
+	private aimFromHeading(): void {
+		const p = this.player;
+		const a = this.aim;
+		const h = this.controls.aim ? this.controls.camYaw : p.heading;
+		const pitch = this.controls.camPitch;
+		a.ox = p.px;
+		a.oy = p.y + 1.5;
+		a.oz = p.pz;
+		a.dx = Math.sin(h) * Math.cos(pitch);
+		a.dy = -Math.sin(pitch);
+		a.dz = Math.cos(h) * Math.cos(pitch);
+		a.skip = 0.5;
 	}
 
 	// ------------------------------------------------------------- damage hub
