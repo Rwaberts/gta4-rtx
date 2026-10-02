@@ -82,9 +82,17 @@ describe('Vehicle physics', () => {
 	});
 });
 
+/** World with ambient streaming off so isolated physics setups are not despawned. */
+function quietWorld(): World {
+	const w = new World();
+	w.traffic.enabled = false;
+	w.actors.density = 0;
+	return w;
+}
+
 describe('VehicleSystem', () => {
 	it('stops vehicles at buildings and damages them on hard impacts', () => {
-		const w = new World();
+		const w = quietWorld();
 		const b = w.city.buildings.find((x) => x.h > 10 && x.y0 === 0 && x.maxZ - x.minZ > 12)!;
 		const z = (b.minZ + b.maxZ) / 2;
 		const v = w.vehicles.spawn('sedan', b.minX - 30, z, Math.PI / 2, 'parked')!;
@@ -98,7 +106,7 @@ describe('VehicleSystem', () => {
 	});
 
 	it('resolves vehicle-vehicle collisions with momentum transfer', () => {
-		const w = new World();
+		const w = quietWorld();
 		const r = openRoad(w);
 		const a = w.vehicles.spawn('sedan', r.x - 20, r.z, Math.PI / 2, 'parked')!;
 		const b = w.vehicles.spawn('sedan', r.x, r.z, Math.PI / 2, 'parked')!;
@@ -109,7 +117,7 @@ describe('VehicleSystem', () => {
 	});
 
 	it('burns and explodes when health runs out, damaging nearby vehicles', () => {
-		const w = new World();
+		const w = quietWorld();
 		const r = openRoad(w);
 		const a = w.vehicles.spawn('sedan', r.x, r.z, Math.PI / 2, 'parked')!;
 		const b = w.vehicles.spawn('hatch', r.x + 7, r.z, Math.PI / 2, 'parked')!;
@@ -124,7 +132,7 @@ describe('VehicleSystem', () => {
 	});
 
 	it('sinks in water', () => {
-		const w = new World();
+		const w = quietWorld();
 		const v = w.vehicles.spawn('sedan', 0, w.city.land.maxZ + 20, 0, 'parked')!;
 		steps(5, () => w.step(DT));
 		expect(v.sinking).toBe(true);
@@ -132,7 +140,7 @@ describe('VehicleSystem', () => {
 	});
 
 	it('player enters, drives and exits a vehicle; stealing is a crime', () => {
-		const w = new World();
+		const w = quietWorld();
 		const r = openRoad(w);
 		const v = w.vehicles.spawn('sedan', r.x, r.z, Math.PI / 2, 'parked')!;
 		const p = w.player;
@@ -169,7 +177,7 @@ describe('VehicleSystem', () => {
 	});
 
 	it('explosion kills an on-foot player at point blank', () => {
-		const w = new World();
+		const w = quietWorld();
 		const p = w.player;
 		let died = false;
 		w.bus.on('playerDied', () => (died = true));

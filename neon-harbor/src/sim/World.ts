@@ -7,6 +7,10 @@ import { WORLD } from '../data/config';
 import { DISTRICTS, type DistrictId } from '../data/districts';
 import { generateCity, type CityLayout } from '../world/CityLayout';
 import { StaticCollision } from '../world/StaticCollision';
+import { RoadNetwork } from '../world/RoadNetwork';
+import { ActorSystem } from './ActorSystem';
+import { Clock } from './Clock';
+import { TrafficSystem } from './TrafficSystem';
 import { clearEdges, createControls, type PlayerControls } from './controls';
 import type { Attacker, GameEvents } from './events';
 import { Player } from './Player';
@@ -29,6 +33,12 @@ export class World {
 	readonly controls: PlayerControls = createControls();
 	readonly rng: Random;
 	readonly vehicles: VehicleSystem;
+	readonly roads: RoadNetwork;
+	readonly clock = new Clock(9);
+	readonly actors: ActorSystem;
+	readonly traffic: TrafficSystem;
+	/** Camera position and look direction (spawners avoid popping objects into view). */
+	readonly view = { x: 0, z: 0, dirX: 0, dirZ: 1 };
 	/** Simulation seconds since start. */
 	time = 0;
 	/** 0..1 road wetness (set by weather). */
@@ -45,17 +55,23 @@ export class World {
 		this.city = generateCity(seed);
 		this.collision = new StaticCollision(16);
 		this.city.forEachSolid((a, b, c, d, e, f) => this.collision.add(a, b, c, d, e, f));
+		this.roads = new RoadNetwork(this.city);
 		this.vehicles = new VehicleSystem(this);
+		this.actors = new ActorSystem(this);
+		this.traffic = new TrafficSystem(this);
 		const home = this.city.poi('safehouse')!;
 		this.player.teleport(home.x + Math.sin(home.facing) * 3, home.z + Math.cos(home.facing) * 3, home.facing);
 	}
 
 	step(dt: number): void {
 		this.time += dt;
+		this.clock.update(dt);
 		this.processExplosions();
 		const p = this.player;
 		if (p.state === 'onFoot') p.updateOnFoot(dt, this.controls, this);
 		this.vehicles.step(dt);
+		this.actors.step(dt);
+		this.traffic.step(dt);
 		p.updateVitals(dt);
 		this.updateDeath(dt);
 		this.updateDistrict(dt);
@@ -110,9 +126,9 @@ export class World {
 		this.bus.emit('playerRespawned', { where: best.name, reason });
 	}
 
-	/** Pulls an NPC driver out of a vehicle (implemented by the actor system). */
-	ejectDriver(v: Vehicle, _carjacked: boolean): void {
-		v.driver = null;
+	/** Pulls an NPC driver out of a vehicle. */
+	ejectDriver(v: Vehicle, carjacked: boolean): void {
+		this.actors.ejectDriver(v, carjacked);
 	}
 
 	// --------------------------------------------------------------- explosions

@@ -235,6 +235,12 @@ export class CityLayout {
 		return this.cells[i - WORLD.gridMinX + (j - WORLD.gridMinZ) * (this.nx - 1)] ?? null;
 	}
 
+	/** Cell by grid indices (cell (i, j) spans x in [i, i+1) * cellSize). */
+	cellIJ(i: number, j: number): Cell | null {
+		if (i < WORLD.gridMinX || i >= WORLD.gridMaxX || j < WORLD.gridMinZ || j >= WORLD.gridMaxZ) return null;
+		return this.cells[i - WORLD.gridMinX + (j - WORLD.gridMinZ) * (this.nx - 1)] ?? null;
+	}
+
 	/** Nearest existing road node to a world position. */
 	nearestNode(x: number, z: number): RoadNode | null {
 		let best: RoadNode | null = null;

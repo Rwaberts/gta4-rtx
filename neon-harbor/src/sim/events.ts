@@ -28,6 +28,8 @@ export interface GameEvents {
 
 	// Crime & police
 	crime: { type: CrimeType; x: number; z: number; perpetrator: Attacker; victim?: Actor | null };
+	/** A witness (civilian phone call or police radio) reports a crime to dispatch. */
+	crimeReported: { type: CrimeType; x: number; z: number; reporter: 'civilian' | 'police'; witness: Actor | null };
 	wantedChanged: { level: number; previous: number };
 	policeSpotted: { x: number; z: number };
 

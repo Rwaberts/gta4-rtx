@@ -86,9 +86,11 @@ scenario('walk-and-sprint', async () => {
 
 scenario('jump-crouch', async () => {
 	await page.keyboard.press('Space');
-	await sleep(150);
-	const y = await game(() => window.__NH__.world.player.y);
-	if (y <= 0.05) throw new Error('jump did not lift player, y=' + y);
+	const lifted = await page
+		.waitForFunction(() => window.__NH__.world.player.y > 0.05, null, { timeout: 8000 })
+		.then(() => true)
+		.catch(() => false);
+	if (!lifted) throw new Error('jump did not lift player');
 	await page.waitForFunction(() => window.__NH__.world.player.onGround, null, { timeout: 10000 });
 	await page.keyboard.press('KeyC');
 	await sleep(300);

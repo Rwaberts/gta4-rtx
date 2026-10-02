@@ -9,6 +9,7 @@ import { HumanoidRenderer, defaultPose, type HumanoidPose } from '../render/Huma
 import { sharedUniforms } from '../render/materials';
 import { VehicleRenderer } from '../render/VehicleRenderer';
 import { Effects } from '../render/Effects';
+import { SignalRenderer } from '../render/SignalRenderer';
 import { CameraController, type CameraTarget } from './CameraController';
 import { Hud } from '../ui/Hud';
 import { Menus } from '../ui/Menus';
@@ -25,6 +26,8 @@ export class Game {
 	readonly cam: CameraController;
 	readonly vehicleViews: VehicleRenderer;
 	readonly effects: Effects;
+	readonly signals: SignalRenderer;
+	private readonly npcPose: HumanoidPose = defaultPose();
 	readonly hud: Hud;
 	readonly menus: Menus;
 	state: GameState = 'menu';
@@ -54,6 +57,7 @@ export class Game {
 		this.cam = new CameraController(this.graphics.camera, this.world.collision);
 		this.vehicleViews = new VehicleRenderer(this.graphics.scene);
 		this.effects = new Effects(this.graphics.scene);
+		this.signals = new SignalRenderer(this.graphics.scene, this.world.roads);
 		this.hookEffects();
 		this.input.attach(this.graphics.renderer.domElement);
 		this.hud = new Hud(ui, this.world);
@@ -268,6 +272,12 @@ export class Game {
 		}
 		const cam = this.graphics.camera;
 		this.graphics.followShadows(cam.position.x, cam.position.z);
+		const fwd = this.cam.forward;
+		const fl = Math.hypot(fwd.x, fwd.z) || 1;
+		w.view.x = cam.position.x;
+		w.view.z = cam.position.z;
+		w.view.dirX = fwd.x / fl;
+		w.view.dirZ = fwd.z / fl;
 
 		// Humanoids.
 		this.humans.begin();
@@ -284,7 +294,9 @@ export class Game {
 			pose.dead = p.state === 'dead' ? Math.min(1, pose.dead + dt * 2) : 0;
 			this.humans.add(pose);
 		}
+		if (this.state !== 'menu') this.addActorPoses();
 		this.humans.end();
+		this.signals.update(cam.position.x, cam.position.z, w.time, dt);
 
 		const q = this.graphics.quality;
 		const night = sharedUniforms.uNight.value;
@@ -295,6 +307,35 @@ export class Game {
 		this.updatePrompt();
 		this.hud.update(dt, w, this.debugText());
 		this.graphics.render();
+	}
+
+	private addActorPoses(): void {
+		const w = this.world;
+		const pose = this.npcPose;
+		for (const a of w.actors.list) {
+			if (!a.active || a.vehicle || a.hidden || a.tier > 1) continue;
+			pose.x = a.x;
+			pose.z = a.z;
+			pose.y = a.y + (w.city.isOnRoad(a.x, a.z) ? 0 : 0.15);
+			pose.heading = a.heading;
+			pose.walkPhase = a.animPhase;
+			pose.walkAmount = Math.min(1.25, a.speed / 4);
+			pose.crouch = a.crouch;
+			pose.aim = a.aiming ? 1 : 0;
+			pose.armed = a.weapon ? (a.weapon === 'pistol' ? 1 : 2) : 0;
+			pose.punch = a.punch;
+			pose.phone = a.phone;
+			pose.handsUp = a.handsUp;
+			pose.dead = a.dead ? Math.min(1, a.deadTime * 2.5) : a.knockdown > 0 ? Math.min(1, a.knockdown / 0.6) : 0;
+			pose.shirt = a.shirt;
+			pose.pants = a.pants;
+			pose.skin = a.skin;
+			pose.hair = a.hair;
+			pose.hat = a.hat;
+			pose.scale = a.scale;
+			pose.sleeves = a.sleeves;
+			this.humans.add(pose);
+		}
 	}
 
 	private updatePrompt(): void {
@@ -343,6 +384,8 @@ export class Game {
 			`pos ${p.x.toFixed(1)}, ${p.y.toFixed(2)}, ${p.z.toFixed(1)}  ${this.world.currentDistrict ?? ''}`,
 			`state ${p.state}  speed ${(p.vehicle ? Math.abs(p.vehicle.forwardSpeed) * 3.6 : p.speed).toFixed(1)}${p.vehicle ? ' km/h hp ' + p.vehicle.health.toFixed(0) : ''}`,
 			`vehicles ${this.world.vehicles.count} (views ${this.vehicleViews.viewCount})  particles ${this.effects.liveParticles}`,
+			`actors ${this.world.actors.count} (drawn ${this.humans.rendered})  peds target ${this.world.actors.targetPopulation()}  traffic target ${this.world.traffic.targetTraffic()}`,
+			`time ${this.world.clock.format()}`,
 		].join('\n');
 	}
 }

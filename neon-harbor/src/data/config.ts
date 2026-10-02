@@ -32,7 +32,7 @@ export const SIM = {
 	actorFullRadius: 70,
 	actorMidRadius: 160,
 	actorDespawnRadius: 260,
-	pedSpawnMin: 45,
+	pedSpawnMin: 28,
 	pedSpawnMax: 170,
 	trafficSpawnMin: 110,
 	trafficSpawnMax: 240,
