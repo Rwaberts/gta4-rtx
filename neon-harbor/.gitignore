@@ -1,0 +1,4 @@
+node_modules
+dist
+tests/smoke/output
+*.log
