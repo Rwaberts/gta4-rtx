@@ -12,6 +12,7 @@ import { CameraController, type CameraTarget } from './CameraController';
 import { WorldView } from './WorldView';
 import { UiController } from './UiController';
 import { loadSettings, type Settings } from '../ui/Settings';
+import { AudioSystem } from '../audio/AudioSystem';
 
 export type GameState = 'menu' | 'playing' | 'paused';
 
@@ -49,6 +50,7 @@ export class Game {
 	readonly cam: CameraController;
 	readonly view: WorldView;
 	readonly ui: UiController;
+	readonly audio: AudioSystem;
 	settings: Settings;
 	state: GameState = 'menu';
 	fps = 0;
@@ -68,6 +70,7 @@ export class Game {
 		this.cam = new CameraController(this.graphics.camera, this.world.collision);
 		this.view = new WorldView(this.world, this.graphics, this.cam);
 		this.ui = new UiController(this, this.world, uiRoot);
+		this.audio = new AudioSystem(this.world);
 		this.input.attach(this.graphics.renderer.domElement);
 		this.applySettings(this.settings);
 
@@ -105,6 +108,8 @@ export class Game {
 	}
 
 	private beginPlaying(): void {
+		// Called from a click handler, so the browser allows audio to start.
+		this.audio.unlock();
 		this.ui.menus.close();
 		this.ui.hud.show(true);
 		this.state = 'playing';
@@ -289,6 +294,7 @@ export class Game {
 		this.updateViewRay();
 
 		this.view.update(dt, this.state !== 'menu', playing);
+		this.audio.update(dt, cam.position.x, cam.position.z, this.cam.yaw, playing);
 		this.ui.update(dt, playing, this.cam.yaw, this.debugText());
 		this.graphics.render();
 	}

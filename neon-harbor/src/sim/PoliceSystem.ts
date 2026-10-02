@@ -426,14 +426,11 @@ export class PoliceSystem {
 	private pickSpawnLane(minD: number, maxD: number): { lane: Lane; s: number } | null {
 		const w = this.world;
 		const p = w.player;
-		const lanes = w.roads.lanes;
+		const rand = () => w.rng.next();
 		for (let tries = 0; tries < 40; tries++) {
-			const lane = lanes[Math.floor(w.rng.next() * lanes.length)];
-			const s = w.rng.range(5, lane.len - 5);
-			const x = lane.sx + lane.dx * s;
-			const z = lane.sz + lane.dz * s;
-			const d = Math.hypot(x - p.px, z - p.pz);
-			if (d < minD || d > maxD) continue;
+			const spot = w.roads.randomLaneNear(p.px, p.pz, minD, maxD, rand);
+			if (!spot) continue;
+			const { lane, s, x, z } = spot;
 			// Avoid spawning in plain sight.
 			const v = w.view;
 			const vd = Math.hypot(x - v.x, z - v.z);

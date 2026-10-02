@@ -304,4 +304,30 @@ export function register({ scenario, page, game, sleep, hold, shot }) {
 		if (after.cash !== cash) throw new Error(`cash not restored: ${after.cash} vs ${cash}`);
 		if (after.state !== 'playing') throw new Error('not playing after load');
 	});
+
+	const atmo = (name, hour, weather) =>
+		scenario(name, async () => {
+			await game(
+				([h, wx]) => {
+					const g = window.__NH__;
+					const w = g.world;
+					w.wanted.clear(true);
+					if (w.interiors.current) w.interiors.exit();
+					w.clock.setHour(h);
+					w.weather.locked = true;
+					w.weather.set(wx, true);
+					const n = w.city.nearestNode(0, -300);
+					w.player.teleport(n.x + 11, n.z + 40, Math.PI);
+					g.snapCamera();
+					g.cam.pitch = 0.05;
+				},
+				[hour, weather],
+			);
+			await sleep(3500);
+			await shot('70-' + name);
+		});
+	atmo('night-city', 23, 'clear');
+	atmo('sunset', 18.6, 'cloudy');
+	atmo('rain', 15, 'rain');
+	atmo('sea-fog', 7.5, 'fog');
 }

@@ -88,16 +88,13 @@ export class TrafficSystem {
 
 	spawnTraffic(): Vehicle | null {
 		const w = this.world;
-		const lanes = w.roads.lanes;
 		const p = w.player;
-		for (let tries = 0; tries < 16; tries++) {
-			const lane = lanes[Math.floor(w.rng.next() * lanes.length)];
-			const s = w.rng.range(8, lane.len - 8);
-			const x = lane.sx + lane.dx * s;
-			const z = lane.sz + lane.dz * s;
-			const d = Math.hypot(x - p.px, z - p.pz);
-			if (d < SIM.trafficSpawnMin || d > SIM.trafficSpawnMax) continue;
-			if (this.visible(x, z) && tries < 12) continue;
+		const rand = () => w.rng.next();
+		for (let tries = 0; tries < 12; tries++) {
+			const spot = w.roads.randomLaneNear(p.px, p.pz, SIM.trafficSpawnMin, SIM.trafficSpawnMax, rand);
+			if (!spot) continue;
+			const { lane, x, z } = spot;
+			if (this.visible(x, z) && tries < 8) continue;
 			if (!this.clearAround(x, z, 14)) continue;
 			const district = DISTRICTS[w.city.districtAt(x, z)];
 			const id = w.vehicles.pickArchetype(district.vehicleMix);

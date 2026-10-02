@@ -142,6 +142,26 @@ export class RoadNetwork {
 		return best;
 	}
 
+	/**
+	 * Random lane position within a distance band of (x, z): samples a point in the ring and
+	 * snaps it to the nearest lane (much cheaper than scanning every lane in the city).
+	 */
+	randomLaneNear(x: number, z: number, minD: number, maxD: number, rand: () => number): { lane: Lane; s: number; x: number; z: number } | null {
+		const ang = rand() * Math.PI * 2;
+		const r = minD + (maxD - minD) * Math.sqrt(rand());
+		const px = x + Math.cos(ang) * r;
+		const pz = z + Math.sin(ang) * r;
+		const hit = this.nearestLane(px, pz);
+		if (!hit || hit.dist > 40) return null;
+		const L = hit.lane;
+		const s = Math.max(6, Math.min(L.len - 6, hit.s));
+		const lx = L.sx + L.dx * s;
+		const lz = L.sz + L.dz * s;
+		const d = Math.hypot(lx - x, lz - z);
+		if (d < minD || d > maxD) return null;
+		return { lane: L, s, x: lx, z: lz };
+	}
+
 	/** A* over intersections. Returns node ids from start to goal (inclusive) or null. */
 	findPath(startId: number, goalId: number): number[] | null {
 		if (startId === goalId) return [startId];

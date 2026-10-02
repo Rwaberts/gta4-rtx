@@ -143,7 +143,7 @@ export class UiController {
 		const inv = w.combat.inventory;
 		const wd = WEAPONS[inv.current];
 		this.hud.setWeapon(wd.name, wd.kind === 'melee' ? null : inv.state.clip, wd.kind === 'melee' ? null : inv.state.reserve, w.combat.reloading);
-		this.hud.setObjective(w.missions.active ? w.missions.objectiveText() : '');
+		this.hud.setObjective(w.missions.active ? w.missions.objectiveText() : w.ambient.objectiveText());
 		const act = w.missions.active;
 		const o = act ? act.def.objectives[act.index] : null;
 		this.hud.setProgress(o && o.type === 'hold' ? w.missions.progress : null);
@@ -201,6 +201,7 @@ export class UiController {
 		let target: { x: number; z: number } | null = null;
 		let color = '#39f0d0';
 		const markers = w.missions.markers([]);
+		if (!w.missions.active) w.ambient.appendMarkers(markers);
 		const dest = markers.find((m) => m.kind === 'goto' || m.kind === 'vehicle' || m.kind === 'pickup') ?? markers.find((m) => m.kind === 'enemy');
 		if (dest && !w.interiors.current) {
 			target = dest;
@@ -248,8 +249,10 @@ export class UiController {
 		}
 		for (const o of w.police.footPatrols) if (o.alive) b.push({ x: o.x, z: o.z, color: '#4a8cff', shape: 'dot', size: 2.5 });
 		if (w.police.heli.active) b.push({ x: w.police.heli.x, z: w.police.heli.z, color: '#4a8cff', shape: 'diamond', size: 5, edge: true });
-		// Mission markers and contacts.
-		for (const m of w.missions.markers([])) {
+		// Mission markers, contacts and side jobs.
+		const ms = w.missions.markers([]);
+		if (!w.missions.active) w.ambient.appendMarkers(ms);
+		for (const m of ms) {
 			if (m.kind === 'contact') b.push({ x: m.x, z: m.z, color: MARKER_COLORS.contact, shape: 'letter', letter: 'M', size: 5, edge: true });
 			else b.push({ x: m.x, z: m.z, color: MARKER_COLORS[m.kind], shape: m.kind === 'goto' ? 'diamond' : 'dot', size: m.kind === 'goto' ? 6 : 4, edge: m.kind !== 'enemy' && m.kind !== 'ally' });
 		}

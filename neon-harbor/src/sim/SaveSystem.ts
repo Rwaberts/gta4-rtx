@@ -213,6 +213,7 @@ export class SaveSystem {
 	apply(d: SaveData): void {
 		const w = this.world;
 		w.missions.reset();
+		w.ambient.reset();
 		w.wanted.clear(true);
 		if (w.interiors.current) w.interiors.exit();
 		w.police.reset();

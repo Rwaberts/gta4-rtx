@@ -21,6 +21,7 @@ import { ARREST_FINE, HOSPITAL_BILL } from '../data/wanted';
 import { ShopSystem } from './ShopSystem';
 import { MemoryStorage, SaveSystem, type KeyValueStorage } from './SaveSystem';
 import { Weather } from './Weather';
+import { AmbientEvents } from './AmbientEvents';
 import type { Actor } from './Actor';
 import { Clock } from './Clock';
 import { TrafficSystem } from './TrafficSystem';
@@ -60,6 +61,7 @@ export class World {
 	readonly shops: ShopSystem;
 	readonly saves: SaveSystem;
 	readonly weather: Weather;
+	readonly ambient: AmbientEvents;
 	/**
 	 * Aim ray (normally the camera's centre ray). `skip` ignores hits between camera and player.
 	 * When `fromCamera` is false (headless) it is derived from the player's heading each step.
@@ -97,6 +99,7 @@ export class World {
 		this.missions = new MissionSystem(this);
 		this.shops = new ShopSystem(this);
 		this.weather = new Weather(this);
+		this.ambient = new AmbientEvents(this);
 		this.saves = new SaveSystem(this, storage);
 		const home = this.city.poi('safehouse')!;
 		this.player.teleport(home.x + Math.sin(home.facing) * 3, home.z + Math.cos(home.facing) * 3, home.facing);
@@ -118,6 +121,7 @@ export class World {
 		this.police.step(dt);
 		this.interactions.step();
 		this.missions.update(dt);
+		this.ambient.step(dt);
 		this.shops.update();
 		this.saves.stats.playTime += dt;
 		p.updateVitals(dt);

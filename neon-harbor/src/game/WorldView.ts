@@ -12,6 +12,7 @@ import { InteriorRenderer } from '../render/InteriorRenderer';
 import { MarkerRenderer } from '../render/MarkerRenderer';
 import { SignalRenderer } from '../render/SignalRenderer';
 import { VehicleRenderer } from '../render/VehicleRenderer';
+import { Atmosphere } from '../render/Atmosphere';
 import { sharedUniforms } from '../render/materials';
 import type { MissionMarker } from '../sim/MissionSystem';
 import type { World } from '../sim/World';
@@ -26,6 +27,7 @@ export class WorldView {
 	readonly heli: HeliRenderer;
 	readonly markers: MarkerRenderer;
 	readonly interiors: InteriorRenderer;
+	readonly atmosphere: Atmosphere;
 	readonly markerList: MissionMarker[] = [];
 	/** Player feet offset when standing on raised sidewalks. */
 	surfaceOffset = 0;
@@ -49,6 +51,7 @@ export class WorldView {
 		this.heli = new HeliRenderer(scene);
 		this.markers = new MarkerRenderer(scene);
 		this.interiors = new InteriorRenderer(scene, world.interiors.instances);
+		this.atmosphere = new Atmosphere(graphics);
 		this.hookEvents();
 	}
 
@@ -82,8 +85,10 @@ export class WorldView {
 		const w = this.world;
 		const p = w.player;
 		const cam = this.graphics.camera;
-		const night = sharedUniforms.uNight.value;
 		const q = this.graphics.quality;
+		const wx = w.weather;
+		this.atmosphere.update(w.clock.hour, wx.params, wx.lightning, wx.wetness, w.clock.nightFactor, !!w.interiors.current, simulating ? dt : 0);
+		const night = sharedUniforms.uNight.value;
 
 		const targetOffset = p.y < 0.05 && !p.swimming && !w.city.isOnRoad(p.x, p.z) ? 0.15 : 0;
 		this.surfaceOffset += (targetOffset - this.surfaceOffset) * Math.min(1, dt * 12);
@@ -100,6 +105,7 @@ export class WorldView {
 		this.vehicles.update(w.vehicles.list, p.state === 'driving' ? p.vehicle : null, night, dt, cam.position.x, cam.position.z, Math.min(q.drawDistance, 450));
 
 		w.missions.markers(this.markerList);
+		if (!w.missions.active) w.ambient.appendMarkers(this.markerList);
 		this.markers.update(inGame ? this.markerList : [], inGame ? w.missions.pickups : [], (x, z) => (w.interiors.isInterior(x, z) || w.city.isOnRoad(x, z) ? 0 : 0.16), dt);
 
 		this.syncGrenades();
