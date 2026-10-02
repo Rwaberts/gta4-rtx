@@ -11,6 +11,8 @@ export interface MenuActions {
 	openSettings(back: () => void): HTMLElement;
 	openSaveLoad(mode: 'save' | 'load', back: () => void): HTMLElement;
 	openMap(back: () => void): HTMLElement;
+	missionActive(): boolean;
+	abandonMission(): void;
 }
 
 export const CONTROL_HELP: Array<[string, string]> = [
@@ -92,8 +94,12 @@ export class Menus {
 			button('Load Game', () => this.open(this.wrap(a.openSaveLoad('load', () => this.showPause()), true))),
 			button('Settings', () => this.open(this.wrap(a.openSettings(() => this.showPause()), true))),
 			button('Controls', () => this.showControls(() => this.showPause(), true)),
-			button('Quit to Main Menu', () => a.quitToMenu()),
 		);
+		if (a.missionActive()) list.append(button('Abandon Mission', () => {
+			a.abandonMission();
+			a.resume();
+		}));
+		list.append(button('Quit to Main Menu', () => a.quitToMenu()));
 		const panel = el('div', { class: 'menu-panel' }, el('div', { class: 'menu-title', text: 'Paused' }), list);
 		this.open(el('div', { class: 'menu-screen center' }, panel));
 	}

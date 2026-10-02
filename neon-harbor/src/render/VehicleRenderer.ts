@@ -31,6 +31,7 @@ class VehicleView {
 	frontPivots: THREE.Object3D[] = [];
 	lastVF = 0;
 	lastHeading = 0;
+	frame = 0;
 	roll = 0;
 	pitch = 0;
 	constructor(readonly defId: string) {
@@ -221,6 +222,7 @@ export class VehicleRenderer {
 	/** Headlight beams follow the player's vehicle only (kept in-scene to avoid shader recompiles). */
 	readonly beam = new THREE.SpotLight(0xfff0d0, 0, 60, 0.55, 0.5, 1.2);
 	private time = 0;
+	private frame = 0;
 
 	constructor(scene: THREE.Scene) {
 		scene.add(this.root);
@@ -287,12 +289,7 @@ export class VehicleRenderer {
 		updateGlowMaterial(this.mats.tailOff, night);
 		const flash = Math.floor(this.time * 6) % 2 === 0;
 
-		// Release views of vehicles that no longer exist.
-		const alive = new Set(vehicles);
-		for (const [v, view] of this.views) {
-			if (!alive.has(v)) this.release(v, view);
-		}
-
+		const frame = ++this.frame;
 		const max2 = maxDist * maxDist;
 		for (const v of vehicles) {
 			const d2 = (v.x - camX) ** 2 + (v.z - camZ) ** 2;
@@ -308,6 +305,7 @@ export class VehicleRenderer {
 				view.lastHeading = v.heading;
 				view.lastVF = v.forwardSpeed;
 			}
+			view.frame = frame;
 			const g = view.group;
 			g.position.set(v.x, v.y, v.z);
 			g.rotation.y = v.heading;
@@ -335,10 +333,13 @@ export class VehicleRenderer {
 			}
 		}
 
+		// Release views whose vehicles were despawned this frame.
+		for (const [v, view] of this.views) if (view.frame !== frame) this.release(v, view);
+
 		// Headlight beam on the player's vehicle at night.
 		if (playerVehicle && !playerVehicle.destroyed && night > 0.2) {
 			const v = playerVehicle;
-			this.beam.intensity = 40 * night;
+			this.beam.intensity = 260 * night;
 			this.beam.position.set(v.x + v.forwardX * v.halfLength, 1.0, v.z + v.forwardZ * v.halfLength);
 			this.beam.target.position.set(v.x + v.forwardX * 25, 0, v.z + v.forwardZ * 25);
 		} else {

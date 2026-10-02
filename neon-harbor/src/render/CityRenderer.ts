@@ -123,6 +123,7 @@ export class CityRenderer {
 		foliage: new THREE.MeshLambertMaterial({ color: 0xffffff }),
 		lampPost: new THREE.MeshLambertMaterial({ color: 0x3a3c40 }),
 		lampHead: createNightGlowMaterial(0xffe2a8, 0.0, 2.2),
+		neon: [createNightGlowMaterial(0xff3ad8, 0.35, 2.6), createNightGlowMaterial(0x2af0d0, 0.35, 2.6), createNightGlowMaterial(0xffa53a, 0.35, 2.6)],
 		sign: new Map<number, THREE.MeshLambertMaterial>(),
 	};
 	readonly water: THREE.Mesh;
@@ -224,6 +225,7 @@ export class CityRenderer {
 
 	update(camX: number, camZ: number, drawDistance: number, detailDistance: number, night: number, dt: number): void {
 		updateGlowMaterial(this.mat.lampHead, night);
+		for (const m of this.mat.neon) updateGlowMaterial(m, night);
 		for (const m of this.mat.sign.values()) updateGlowMaterial(m, night);
 		this.visTimer -= dt;
 		if (this.visTimer <= 0) {
@@ -311,6 +313,41 @@ export class CityRenderer {
 				base.add(roofMesh);
 			}
 		}
+
+		// Rooftop neon strips on some downtown / beachfront / financial buildings.
+		const neon: number[][] = [[], [], []];
+		for (const bi of it.buildings) {
+			const b = city.buildings[bi];
+			if (b.h < 12 || b.y0 > 0 || (b.district !== 'downtown' && b.district !== 'beachfront' && b.district !== 'financial')) continue;
+			const r = ((bi * 2654435761) >>> 0) / 4294967296;
+			if (r < 0.75) continue;
+			neon[Math.floor(r * 1000) % 3].push(bi);
+		}
+		neon.forEach((list, ci) => {
+			if (!list.length) return;
+			const mesh = this.instanced(this.geo.box, this.mat.neon[ci], list.length * 4, false, false);
+			let k = 0;
+			for (const bi of list) {
+				const b = city.buildings[bi];
+				const y = b.y0 + b.h - 0.9;
+				const cx = (b.minX + b.maxX) / 2;
+				const cz = (b.minZ + b.maxZ) / 2;
+				const w = b.maxX - b.minX;
+				const d = b.maxZ - b.minZ;
+				q.identity();
+				for (const [px, pz, sx, sz] of [
+					[cx, b.minZ - 0.08, w + 0.2, 0.18],
+					[cx, b.maxZ + 0.08, w + 0.2, 0.18],
+					[b.minX - 0.08, cz, 0.18, d + 0.2],
+					[b.maxX + 0.08, cz, 0.18, d + 0.2],
+				]) {
+					m4.compose(pos.set(px, y, pz), q, scl.set(sx, 0.32, sz));
+					mesh.setMatrixAt(k++, m4);
+				}
+			}
+			mesh.computeBoundingSphere();
+			base.add(mesh);
+		});
 
 		// Ground patches (lots, fields, sand, piers).
 		if (it.ground.length) {

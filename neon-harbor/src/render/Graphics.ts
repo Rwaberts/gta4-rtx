@@ -131,6 +131,7 @@ export class Graphics {
 	}
 
 	applyQuality(q: GraphicsQuality): void {
+		const shadowsChanged = q.shadows !== this.renderer.shadowMap.enabled;
 		this.quality = { ...q };
 		this.renderer.setPixelRatio(q.pixelRatio);
 		this.renderer.shadowMap.enabled = q.shadows;
@@ -143,7 +144,8 @@ export class Graphics {
 		this.camera.far = q.drawDistance + 600;
 		this.camera.updateProjectionMatrix();
 		this.fog.far = q.drawDistance;
-		// Shadow toggles require material recompiles.
+		// Shadow toggles require material recompiles (expensive, so only when they change).
+		if (!shadowsChanged) return;
 		this.scene.traverse((o) => {
 			const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
 			if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));

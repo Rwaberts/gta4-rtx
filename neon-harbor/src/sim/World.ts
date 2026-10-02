@@ -190,16 +190,20 @@ export class World {
 	respawn(reason: 'death' | 'arrest'): void {
 		const p = this.player;
 		const kind = reason === 'death' ? 'hospital' : 'police';
+		const inside = this.interiors.current;
+		const fromX = inside ? inside.poi.x : p.x;
+		const fromZ = inside ? inside.poi.z : p.z;
 		let best = this.city.pois.find((x) => x.kind === kind)!;
 		let bestD = Infinity;
 		for (const poi of this.city.pois) {
 			if (poi.kind !== kind) continue;
-			const d = (poi.x - p.x) ** 2 + (poi.z - p.z) ** 2;
+			const d = (poi.x - fromX) ** 2 + (poi.z - fromZ) ** 2;
 			if (d < bestD) {
 				bestD = d;
 				best = poi;
 			}
 		}
+		this.interiors.leaveSilently();
 		p.resetVitals();
 		p.teleport(best.x + Math.sin(best.facing) * 2.5, best.z + Math.cos(best.facing) * 2.5, best.facing);
 		if (reason === 'death') {

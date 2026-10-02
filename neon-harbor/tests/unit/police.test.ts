@@ -168,3 +168,24 @@ describe('Wanted system', () => {
 		expect(closest).toBeLessThan(25);
 	});
 });
+
+describe('Police vehicles', () => {
+	it('stealing an occupied police car ejects the whole crew and is assault on police', () => {
+		const w = street();
+		const p = w.player;
+		const u = w.police.createUnit('police', p.x + 3, p.z, 0, 'patrol', false, 2, false)!;
+		const v = u.vehicle!;
+		const crimes: string[] = [];
+		w.bus.on('crime', (c) => crimes.push(c.type));
+		const door = v.doorPoint(-1);
+		p.teleport(door.x, door.z, 0);
+		w.step(DT);
+		w.controls.enterExitPressed = true;
+		run(w, 1.5);
+		expect(p.state).toBe('driving');
+		expect(p.vehicle).toBe(v);
+		expect(v.passengers.length).toBe(0);
+		for (const o of u.officers) expect(o.vehicle).toBeNull();
+		expect(crimes).toContain('assaultPolice');
+	});
+});

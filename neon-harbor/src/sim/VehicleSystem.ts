@@ -431,11 +431,14 @@ export class VehicleSystem {
 		p.transitionFrom.z = p.z;
 		p.crouching = false;
 		p.aiming = false;
+		// Strangers in the back get out too (allies stay for the ride).
+		for (const a of [...v.passengers]) if (a.faction !== 'crew') w.actors.unboardPassenger(a);
 		// Pull out an NPC driver (carjack).
 		const d = v.driver;
 		if (d && d !== 'player') {
+			const victim = d as Actor;
 			w.ejectDriver(v, true);
-			w.bus.emit('crime', { type: 'carjack', x: v.x, z: v.z, perpetrator: 'player', victim: d as Actor });
+			w.bus.emit('crime', { type: victim.role === 'police' ? 'assaultPolice' : 'carjack', x: v.x, z: v.z, perpetrator: 'player', victim });
 		} else if (v.role !== 'owned' && v.role !== 'mission' && v.tag !== 'player-used') {
 			w.bus.emit('crime', { type: v.def.police ? 'policeVehicleTheft' : 'vehicleTheft', x: v.x, z: v.z, perpetrator: 'player' });
 		}

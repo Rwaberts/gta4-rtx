@@ -77,7 +77,7 @@ if (vStyle > 0.5 && abs(vWNormal.y) < 0.5) {
 	if (vStyle > 3.5) nhWin *= step(0.5, id.y) * step(id.y, 1.5);
 	float seed = floor(plane * 0.37) * 17.0;
 	float r = nhHash(id + vec2(seed, seed * 0.31));
-	nhLit = step(0.52, r);
+	nhLit = step(0.6, r);
 	nhTint = nhHash(id.yx + seed);
 	vec3 glass = vStyle > 2.5 && vStyle < 3.5 ? vec3(0.30, 0.44, 0.56) : vec3(0.16, 0.2, 0.25);
 	glass *= 0.75 + 0.5 * fract(id.y * 0.37 + id.x * 0.11 + seed);
@@ -91,8 +91,8 @@ diffuseColor.rgb *= 1.0 - uWet * 0.25;`,
 			.replace(
 				'#include <emissivemap_fragment>',
 				`#include <emissivemap_fragment>
-vec3 nhLitCol = mix(vec3(1.0, 0.78, 0.48), vec3(0.7, 0.85, 1.0), step(0.72, nhTint));
-totalEmissiveRadiance += nhLitCol * nhWin * nhLit * uNight * 0.85;`,
+vec3 nhLitCol = mix(vec3(1.0, 0.72, 0.4), vec3(0.62, 0.8, 1.0), step(0.75, nhTint));
+totalEmissiveRadiance += nhLitCol * nhWin * nhLit * uNight * (0.45 + 0.25 * nhTint);`,
 			);
 	};
 	m.customProgramCacheKey = () => 'nh-building';

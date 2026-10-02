@@ -191,7 +191,8 @@ export class Hud {
 		this.armorBar.classList.toggle('hidden', p.armor <= 0);
 		setWidth(this.stamina, (p.stamina / PLAYER.maxStamina) * 100);
 		this.staminaBar.classList.toggle('hidden', p.stamina >= PLAYER.maxStamina - 0.1);
-		this.crosshair.classList.toggle('on', (p.aiming && p.state === 'onFoot') || this.hitTimer > 0);
+		const driveBy = p.state === 'driving' && world.controls.aim && world.combat.inventory.def.driveBy;
+		this.crosshair.classList.toggle('on', (p.aiming && p.state === 'onFoot') || driveBy || this.hitTimer > 0);
 		if (this.hitTimer > 0) {
 			this.hitTimer -= dt;
 			if (this.hitTimer <= 0) this.crosshair.classList.remove('hit');

@@ -13,6 +13,7 @@ import { MarkerRenderer } from '../render/MarkerRenderer';
 import { SignalRenderer } from '../render/SignalRenderer';
 import { VehicleRenderer } from '../render/VehicleRenderer';
 import { Atmosphere } from '../render/Atmosphere';
+import { LampLights } from '../render/LampLights';
 import { sharedUniforms } from '../render/materials';
 import type { MissionMarker } from '../sim/MissionSystem';
 import type { World } from '../sim/World';
@@ -28,6 +29,7 @@ export class WorldView {
 	readonly markers: MarkerRenderer;
 	readonly interiors: InteriorRenderer;
 	readonly atmosphere: Atmosphere;
+	readonly lampLights: LampLights;
 	readonly markerList: MissionMarker[] = [];
 	/** Player feet offset when standing on raised sidewalks. */
 	surfaceOffset = 0;
@@ -52,6 +54,7 @@ export class WorldView {
 		this.markers = new MarkerRenderer(scene);
 		this.interiors = new InteriorRenderer(scene, world.interiors.instances);
 		this.atmosphere = new Atmosphere(graphics);
+		this.lampLights = new LampLights(scene, world.city);
 		this.hookEvents();
 	}
 
@@ -89,6 +92,7 @@ export class WorldView {
 		const wx = w.weather;
 		this.atmosphere.update(w.clock.hour, wx.params, wx.lightning, wx.wetness, w.clock.nightFactor, !!w.interiors.current, simulating ? dt : 0);
 		const night = sharedUniforms.uNight.value;
+		this.lampLights.update(cam.position.x, cam.position.z, night, !!w.interiors.current, dt);
 
 		const targetOffset = p.y < 0.05 && !p.swimming && !w.city.isOnRoad(p.x, p.z) ? 0.15 : 0;
 		this.surfaceOffset += (targetOffset - this.surfaceOffset) * Math.min(1, dt * 12);

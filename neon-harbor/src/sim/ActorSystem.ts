@@ -78,10 +78,15 @@ export class ActorSystem {
 		const i = this.list.indexOf(a);
 		if (i < 0) return;
 		this.list.splice(i, 1);
-		if (a.vehicle && a.vehicle.driver === a) {
-			a.vehicle.driver = null;
-			a.vehicle.brain?.dispose?.(a.vehicle);
-			a.vehicle.brain = null;
+		const v = a.vehicle;
+		if (v) {
+			if (v.driver === a) {
+				v.driver = null;
+				v.brain?.dispose?.(v);
+				v.brain = null;
+			}
+			const pi = v.passengers.indexOf(a);
+			if (pi >= 0) v.passengers.splice(pi, 1);
 		}
 		a.reset();
 		this.pool.push(a);

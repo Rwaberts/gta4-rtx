@@ -116,6 +116,16 @@ export class InteriorSystem {
 		w.bus.emit('interiorChanged', { id: null, name: poi.name });
 	}
 
+	/** Leaves the current interior without teleporting (respawn / load handles placement). */
+	leaveSilently(): void {
+		if (!this.current) return;
+		const name = this.current.poi.name;
+		this.current = null;
+		if (this.clerk?.active) this.world.actors.despawn(this.clerk);
+		this.clerk = null;
+		this.world.bus.emit('interiorChanged', { id: null, name });
+	}
+
 	/** True when the given world position is inside any interior volume. */
 	isInterior(x: number, z: number): boolean {
 		return x > WORLD.interiorOrigin.x - 100 && z > WORLD.interiorOrigin.z - 100;

@@ -55,6 +55,8 @@ export class UiController {
 			openSettings: (back) => settingsPanel(game.settings, (s) => game.applySettings(s), back),
 			openSaveLoad: (mode, back) => saveLoadPanel(world.saves, mode, (slot) => game.loadSlot(slot), back),
 			openMap: (back) => this.mapPanel(back),
+			missionActive: () => world.missions.active !== null,
+			abandonMission: () => world.missions.abandon(),
 		});
 		const bus = world.bus;
 		bus.on('hitConfirm', (e) => this.hud.hitMarker(e.kill));
