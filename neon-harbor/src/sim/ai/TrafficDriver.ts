@@ -25,6 +25,9 @@ export class TrafficDriver implements VehicleBrain {
 	/** Ignore signals (police patrols in a hurry, panicked drivers). */
 	ignoreSignals = false;
 	label = 'drive';
+	/** Optional node route (A*); when exhausted `arrived` becomes true and driving goes random. */
+	route: number[] | null = null;
+	arrived = false;
 
 	constructor(
 		private readonly world: World,
@@ -39,10 +42,36 @@ export class TrafficDriver implements VehicleBrain {
 		return this.label;
 	}
 
+	/** Plans a route over the road graph towards a world position. */
+	setDestination(x: number, z: number): void {
+		const goal = this.world.city.nearestNode(x, z);
+		this.arrived = false;
+		if (!goal) {
+			this.route = null;
+			return;
+		}
+		this.route = this.world.roads.findPath(this.lane.to, goal.id);
+		if (this.route && this.route.length <= 1) {
+			this.route = null;
+			this.arrived = true;
+		}
+	}
+
 	private chooseNext(): Lane | null {
 		const opts = this.lane.next;
 		if (!opts.length) return null;
 		const roads = this.world.roads;
+		if (this.route) {
+			const i = this.route.indexOf(this.lane.to);
+			const nextNode = i >= 0 ? this.route[i + 1] : undefined;
+			if (nextNode !== undefined) {
+				const l = roads.laneBetween(this.lane.to, nextNode);
+				if (l && opts.includes(l.id)) return l;
+			}
+			// Route finished (or we fell off it).
+			this.arrived = i >= 0 && nextNode === undefined;
+			this.route = null;
+		}
 		// Prefer going straight.
 		let straight: Lane | null = null;
 		for (const id of opts) {

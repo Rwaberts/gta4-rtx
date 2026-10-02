@@ -10,6 +10,7 @@ import { sharedUniforms } from '../render/materials';
 import { VehicleRenderer } from '../render/VehicleRenderer';
 import { Effects } from '../render/Effects';
 import { SignalRenderer } from '../render/SignalRenderer';
+import { HeliRenderer } from '../render/HeliRenderer';
 import { CameraController, type CameraTarget } from './CameraController';
 import { Hud } from '../ui/Hud';
 import { Menus } from '../ui/Menus';
@@ -29,6 +30,7 @@ export class Game {
 	readonly vehicleViews: VehicleRenderer;
 	readonly effects: Effects;
 	readonly signals: SignalRenderer;
+	readonly heli: HeliRenderer;
 	private readonly npcPose: HumanoidPose = defaultPose();
 	private grenadeMeshes: THREE.Mesh[] = [];
 	private readonly grenadeGeo = new THREE.SphereGeometry(0.12, 8, 6);
@@ -63,6 +65,7 @@ export class Game {
 		this.vehicleViews = new VehicleRenderer(this.graphics.scene);
 		this.effects = new Effects(this.graphics.scene);
 		this.signals = new SignalRenderer(this.graphics.scene, this.world.roads);
+		this.heli = new HeliRenderer(this.graphics.scene);
 		this.hookEffects();
 		this.input.attach(this.graphics.renderer.domElement);
 		this.hud = new Hud(ui, this.world);
@@ -327,6 +330,8 @@ export class Game {
 		if (this.state !== 'menu') this.addActorPoses();
 		this.humans.end();
 		this.signals.update(cam.position.x, cam.position.z, w.time, dt);
+		const want = w.wanted;
+		this.heli.update(w.police.heli, want.seen ? p.px : want.lkpX, want.seen ? p.pz : want.lkpZ, sharedUniforms.uNight.value, dt);
 
 		const q = this.graphics.quality;
 		const night = sharedUniforms.uNight.value;
@@ -433,7 +438,8 @@ export class Game {
 			`state ${p.state}  speed ${(p.vehicle ? Math.abs(p.vehicle.forwardSpeed) * 3.6 : p.speed).toFixed(1)}${p.vehicle ? ' km/h hp ' + p.vehicle.health.toFixed(0) : ''}`,
 			`vehicles ${this.world.vehicles.count} (views ${this.vehicleViews.viewCount})  particles ${this.effects.liveParticles}`,
 			`actors ${this.world.actors.count} (drawn ${this.humans.rendered})  peds target ${this.world.actors.targetPopulation()}  traffic target ${this.world.traffic.targetTraffic()}`,
-			`time ${this.world.clock.format()}`,
+			`time ${this.world.clock.format()}  wanted ${this.world.wanted.level} heat ${this.world.wanted.heat.toFixed(0)} ${this.world.wanted.seen ? 'SEEN' : this.world.wanted.searching ? 'search ' + this.world.wanted.searchRemaining.toFixed(0) : ''}`,
+			`police ${this.world.police.summary()}`,
 		].join('\n');
 	}
 }

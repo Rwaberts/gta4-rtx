@@ -10,6 +10,9 @@ import { StaticCollision } from '../world/StaticCollision';
 import { RoadNetwork } from '../world/RoadNetwork';
 import { ActorSystem } from './ActorSystem';
 import { CombatSystem } from './CombatSystem';
+import { PoliceSystem } from './PoliceSystem';
+import { WantedSystem } from './WantedSystem';
+import type { Actor } from './Actor';
 import { Clock } from './Clock';
 import { TrafficSystem } from './TrafficSystem';
 import { clearEdges, createControls, type PlayerControls } from './controls';
@@ -39,6 +42,8 @@ export class World {
 	readonly actors: ActorSystem;
 	readonly traffic: TrafficSystem;
 	readonly combat: CombatSystem;
+	readonly wanted: WantedSystem;
+	readonly police: PoliceSystem;
 	/**
 	 * Aim ray (normally the camera's centre ray). `skip` ignores hits between camera and player.
 	 * When `fromCamera` is false (headless) it is derived from the player's heading each step.
@@ -67,6 +72,8 @@ export class World {
 		this.actors = new ActorSystem(this);
 		this.traffic = new TrafficSystem(this);
 		this.combat = new CombatSystem(this);
+		this.wanted = new WantedSystem(this);
+		this.police = new PoliceSystem(this);
 		const home = this.city.poi('safehouse')!;
 		this.player.teleport(home.x + Math.sin(home.facing) * 3, home.z + Math.cos(home.facing) * 3, home.facing);
 	}
@@ -83,6 +90,7 @@ export class World {
 		this.combat.step(dt);
 		this.actors.step(dt);
 		this.traffic.step(dt);
+		this.police.step(dt);
 		p.updateVitals(dt);
 		this.updateDeath(dt);
 		this.updateDistrict(dt);
@@ -125,11 +133,23 @@ export class World {
 		this.bus.emit('playerDied', { cause });
 	}
 
+	/** Officers finished cuffing the player. */
+	arrestPlayer(by: Actor | null): void {
+		const p = this.player;
+		if (!p.alive || p.state === 'arrested') return;
+		if (p.state === 'driving' && p.vehicle) this.vehicles.ejectPlayer(p.vehicle, false);
+		p.state = 'arrested';
+		p.vx = p.vz = 0;
+		p.aiming = false;
+		this.deathTimer = 0;
+		this.bus.emit('playerArrested', { by });
+	}
+
 	private updateDeath(dt: number): void {
 		const p = this.player;
-		if (p.state !== 'dead') return;
+		if (p.state !== 'dead' && p.state !== 'arrested') return;
 		this.deathTimer += dt;
-		if (this.deathTimer > 4.5) this.respawn('death');
+		if (this.deathTimer > (p.state === 'dead' ? 4.5 : 3.5)) this.respawn(p.state === 'dead' ? 'death' : 'arrest');
 	}
 
 	/** Respawns at the nearest hospital (death) or police precinct (arrest). */

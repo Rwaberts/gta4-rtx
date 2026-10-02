@@ -376,13 +376,18 @@ export class CombatSystem {
 	 * the target moves; misses still fly and can hit bystanders.
 	 */
 	npcFire(a: Actor, tx: number, ty: number, tz: number, weaponId: WeaponId, targetSpeed: number): void {
-		const w = this.world;
-		const def = WEAPONS[weaponId];
 		const fx = Math.sin(a.heading);
 		const fz = Math.cos(a.heading);
 		const mx = a.x + fx * 0.7 - fz * 0.25;
 		const my = a.y + 1.42 - a.crouch * 0.4;
 		const mz = a.z + fz * 0.7 + fx * 0.25;
+		this.fireFrom(mx, my, mz, tx, ty, tz, weaponId, a.accuracy, targetSpeed, a);
+	}
+
+	/** Fires from an arbitrary muzzle position (NPCs, helicopter marksman, turrets). */
+	fireFrom(mx: number, my: number, mz: number, tx: number, ty: number, tz: number, weaponId: WeaponId, accuracy: number, targetSpeed: number, shooter: Actor | null): void {
+		const w = this.world;
+		const def = WEAPONS[weaponId];
 		let dx = tx - mx;
 		let dy = ty - my;
 		let dz = tz - mz;
@@ -390,12 +395,12 @@ export class CombatSystem {
 		dx /= dist;
 		dy /= dist;
 		dz /= dist;
-		const spread = def.spread + (1 - a.accuracy) * 0.07 + clamp(targetSpeed / 40, 0, 0.12) + clamp(dist / 400, 0, 0.08);
+		const spread = def.spread + (1 - accuracy) * 0.07 + clamp(targetSpeed / 40, 0, 0.12) + clamp(dist / 400, 0, 0.08);
 		for (let i = 0; i < def.pellets; i++) {
 			const [sx, sy, sz] = this.jitter(dx, dy, dz, spread);
-			this.fireRay(mx, my, mz, sx, sy, sz, def, a, NPC_DAMAGE_SCALE);
+			this.fireRay(mx, my, mz, sx, sy, sz, def, shooter, NPC_DAMAGE_SCALE);
 		}
-		w.bus.emit('gunshot', { x: mx, y: my, z: mz, shooter: a, radius: def.noise });
+		w.bus.emit('gunshot', { x: mx, y: my, z: mz, shooter, radius: def.noise });
 		w.bus.emit('sound', { id: 'shot_' + def.id, x: mx, z: mz });
 	}
 

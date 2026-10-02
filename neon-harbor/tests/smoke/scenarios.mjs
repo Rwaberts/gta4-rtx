@@ -158,4 +158,47 @@ export function register({ scenario, page, game, sleep, hold, shot }) {
 		await shot('31-grenade');
 		await game(() => (window.__NH__.world.player.invulnerable = false));
 	});
+
+	scenario('police-pursuit', async () => {
+		const r = await game(() => {
+			const g = window.__NH__;
+			const w = g.world;
+			const p = w.player;
+			p.invulnerable = true;
+			w.wanted.setLevel(3);
+			// Fast-forward until a unit is close (rendering is far slower than the simulation here).
+			for (let i = 0; i < 40; i++) {
+				g.simulate(0.5);
+				const near = w.police.units.some((u) => Math.hypot(u.x - p.px, u.z - p.pz) < 45);
+				if (near) break;
+			}
+			const u = w.police.units.reduce((a, b) => (Math.hypot(a.x - p.px, a.z - p.pz) < Math.hypot(b.x - p.px, b.z - p.pz) ? a : b));
+			g.cam.yaw = Math.atan2(u.x - p.px, u.z - p.pz);
+			g.cam.pitch = 0.12;
+			return { level: w.wanted.level, units: w.police.units.length, summary: w.police.summary() };
+		});
+		await sleep(2500);
+		await shot('40-police-pursuit');
+		if (r.units < 1) throw new Error('no police units');
+		return `level ${r.level}, ${r.summary}`;
+	});
+
+	scenario('arrest', async () => {
+		const ok = await game(() => {
+			const g = window.__NH__;
+			const w = g.world;
+			const p = w.player;
+			w.wanted.clear(true);
+			g.simulate(1);
+			p.invulnerable = false;
+			w.combat.inventory.select('fists');
+			w.wanted.setLevel(1);
+			w.police.createUnit('police', p.x + 12, p.z + 4, 0, 'pursue', false, 2, false);
+			for (let i = 0; i < 60 && p.state !== 'arrested'; i++) g.simulate(0.5);
+			return p.state === 'arrested';
+		});
+		await sleep(400);
+		await shot('41-in-custody');
+		if (!ok) throw new Error('player was not arrested');
+	});
 }

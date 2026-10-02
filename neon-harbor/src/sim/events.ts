@@ -32,6 +32,8 @@ export interface GameEvents {
 	crimeReported: { type: CrimeType; x: number; z: number; reporter: 'civilian' | 'police'; witness: Actor | null };
 	wantedChanged: { level: number; previous: number };
 	policeSpotted: { x: number; z: number };
+	/** Police radio chatter shown as subtitles. */
+	radio: { text: string };
 
 	// Combat
 	gunshot: { x: number; y: number; z: number; shooter: Attacker; radius: number };

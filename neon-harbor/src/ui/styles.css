@@ -464,3 +464,106 @@ body {
 .hud-weapon .ammo.empty {
 	color: var(--nh-red);
 }
+
+/* Wanted: five heat chevrons (original design). */
+.hud-wanted {
+	position: absolute;
+	right: 30px;
+	top: 52px;
+	display: flex;
+	gap: 5px;
+	opacity: 0.35;
+	transition: opacity 0.3s;
+}
+.hud-wanted.active {
+	opacity: 1;
+}
+.hud-wanted .chev {
+	width: 22px;
+	height: 16px;
+	clip-path: polygon(0 0, 50% 45%, 100% 0, 100% 55%, 50% 100%, 0 55%);
+	background: rgba(255, 255, 255, 0.18);
+	transform: rotate(180deg);
+}
+.hud-wanted .chev.on {
+	background: linear-gradient(180deg, var(--nh-red), var(--nh-blue));
+	filter: drop-shadow(0 0 4px rgba(255, 74, 90, 0.8));
+}
+.hud-wanted.searching .chev.on {
+	animation: chev-flash 0.9s infinite;
+}
+@keyframes chev-flash {
+	50% {
+		opacity: 0.25;
+	}
+}
+.hud-arrest {
+	position: absolute;
+	left: 50%;
+	top: 62%;
+	transform: translateX(-50%);
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	font: 700 13px var(--nh-mono);
+	letter-spacing: 0.2em;
+	color: var(--nh-blue);
+}
+.hud-arrest .bar {
+	width: 180px;
+	margin: 0;
+}
+.hud-arrest .bar > div {
+	background: var(--nh-blue);
+}
+.hud-radio {
+	position: absolute;
+	left: 50%;
+	bottom: 8%;
+	transform: translateX(-50%);
+	font: 13px var(--nh-mono);
+	color: #9fc4ff;
+	background: rgba(4, 10, 24, 0.7);
+	border-left: 3px solid var(--nh-blue);
+	padding: 6px 14px;
+	opacity: 0;
+	transition: opacity 0.4s;
+	white-space: nowrap;
+}
+.hud-radio.show {
+	opacity: 1;
+}
+.hud-overlay {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.75));
+	animation: overlay-in 1.2s ease-out;
+}
+.hud-overlay .title {
+	font-size: 64px;
+	font-weight: 800;
+	letter-spacing: 0.2em;
+}
+.hud-overlay.dead .title {
+	color: var(--nh-red);
+	text-shadow: 0 0 30px rgba(255, 74, 90, 0.7);
+}
+.hud-overlay.busted .title {
+	color: var(--nh-blue);
+	text-shadow: 0 0 30px rgba(74, 140, 255, 0.7);
+}
+.hud-overlay .sub {
+	margin-top: 12px;
+	color: var(--nh-dim);
+	letter-spacing: 0.2em;
+	text-transform: uppercase;
+}
+@keyframes overlay-in {
+	from {
+		opacity: 0;
+	}
+}

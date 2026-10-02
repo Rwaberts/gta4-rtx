@@ -25,6 +25,15 @@ export class Hud {
 	private weapon = el('div', { class: 'hud-weapon' });
 	private weaponName = el('div', { class: 'name' });
 	private weaponAmmo = el('div', { class: 'ammo' });
+	private wanted = el('div', { class: 'hud-wanted' });
+	private chevrons: HTMLElement[] = [];
+	private arrestBar = el('div', { class: 'hud-arrest hidden' });
+	private arrestFill = el('div');
+	private radio = el('div', { class: 'hud-radio' });
+	private radioTimer = 0;
+	private overlay = el('div', { class: 'hud-overlay hidden' });
+	private overlayTitle = el('div', { class: 'title' });
+	private overlaySub = el('div', { class: 'sub' });
 	private hitTimer = 0;
 	private districtTimer = 0;
 	debugVisible = false;
@@ -34,7 +43,22 @@ export class Hud {
 		const vitals = el('div', { class: 'hud-vitals' }, this.healthBar, this.armorBar, this.staminaBar);
 		this.prompt.append(this.promptKey, this.promptText);
 		this.weapon.append(this.weaponName, this.weaponAmmo);
-		this.root.append(this.weapon);
+		for (let i = 0; i < 5; i++) {
+			const c = el('div', { class: 'chev' });
+			this.chevrons.push(c);
+			this.wanted.append(c);
+		}
+		this.arrestBar.append(el('span', { text: 'ARREST' }), el('div', { class: 'bar' }, this.arrestFill));
+		this.overlay.append(this.overlayTitle, this.overlaySub);
+		this.root.append(this.weapon, this.wanted, this.arrestBar, this.radio, this.overlay);
+		world.bus.on('radio', (r) => {
+			setText(this.radio, r.text);
+			this.radio.classList.add('show');
+			this.radioTimer = 5;
+		});
+		world.bus.on('playerDied', () => this.showOverlay('CRITICAL CONDITION', 'Rushed to the nearest hospital…', 'dead'));
+		world.bus.on('playerArrested', () => this.showOverlay('IN CUSTODY', 'Booked at the nearest precinct…', 'busted'));
+		world.bus.on('playerRespawned', () => this.overlay.classList.add('hidden'));
 		this.root.append(this.crosshair, this.district, this.notifyBox, this.debug, vitals, this.prompt);
 		parent.append(this.root);
 		world.bus.on('notify', (n) => this.notify(n.text, n.kind, n.duration));
@@ -59,6 +83,12 @@ export class Hud {
 		setText(this.weaponName, name);
 		setText(this.weaponAmmo, clip === null ? '' : reloading ? 'RELOADING' : `${clip} / ${reserve}`);
 		this.weaponAmmo.classList.toggle('empty', clip === 0 && !reloading);
+	}
+
+	showOverlay(title: string, sub: string, kind: string): void {
+		setText(this.overlayTitle, title);
+		setText(this.overlaySub, sub);
+		this.overlay.className = 'hud-overlay ' + kind;
 	}
 
 	hitMarker(kill: boolean): void {
@@ -94,6 +124,20 @@ export class Hud {
 		if (this.hitTimer > 0) {
 			this.hitTimer -= dt;
 			if (this.hitTimer <= 0) this.crosshair.classList.remove('hit');
+		}
+
+		// Wanted chevrons: filled per level, pulsing while the police search.
+		const wd = world.wanted;
+		this.chevrons.forEach((c, i) => {
+			c.classList.toggle('on', i < wd.level);
+		});
+		this.wanted.classList.toggle('searching', wd.searching);
+		this.wanted.classList.toggle('active', wd.level > 0);
+		this.arrestBar.classList.toggle('hidden', wd.arrest <= 0.01);
+		setWidth(this.arrestFill, wd.arrest * 100);
+		if (this.radioTimer > 0) {
+			this.radioTimer -= dt;
+			if (this.radioTimer <= 0) this.radio.classList.remove('show');
 		}
 
 		if (this.districtTimer > 0) {
