@@ -19,13 +19,17 @@ export class Hud {
 	private armorBar = el('div', { class: 'bar armor' }, this.armor);
 	private stamina = el('div');
 	private staminaBar = el('div', { class: 'bar stamina' }, this.stamina);
+	private prompt = el('div', { class: 'hud-prompt hidden' });
+	private promptKey = el('span', { class: 'key' });
+	private promptText = el('span');
 	private districtTimer = 0;
 	debugVisible = false;
 
 	constructor(parent: HTMLElement, world: World) {
 		this.district.append(this.districtName, this.districtTag);
 		const vitals = el('div', { class: 'hud-vitals' }, this.healthBar, this.armorBar, this.staminaBar);
-		this.root.append(this.crosshair, this.district, this.notifyBox, this.debug, vitals);
+		this.prompt.append(this.promptKey, this.promptText);
+		this.root.append(this.crosshair, this.district, this.notifyBox, this.debug, vitals, this.prompt);
 		parent.append(this.root);
 		world.bus.on('notify', (n) => this.notify(n.text, n.kind, n.duration));
 		world.bus.on('districtEntered', (d) => {
@@ -43,6 +47,14 @@ export class Hud {
 	toggleDebug(): void {
 		this.debugVisible = !this.debugVisible;
 		this.debug.classList.toggle('hidden', !this.debugVisible);
+	}
+
+	/** Context prompt such as "[F] Enter vehicle". Pass null to hide. */
+	setPrompt(key: string | null, text = ''): void {
+		this.prompt.classList.toggle('hidden', key === null);
+		if (key === null) return;
+		setText(this.promptKey, key);
+		setText(this.promptText, text);
 	}
 
 	notify(text: string, kind: NotifyKind = 'info', duration = 4.5): void {

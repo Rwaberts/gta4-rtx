@@ -419,3 +419,27 @@ body {
 		opacity: 0.5;
 	}
 }
+
+.hud-prompt {
+	position: absolute;
+	left: 50%;
+	bottom: 18%;
+	transform: translateX(-50%);
+	background: var(--nh-panel);
+	border: 1px solid var(--nh-border);
+	padding: 8px 16px;
+	font-size: 15px;
+	letter-spacing: 0.05em;
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	white-space: nowrap;
+}
+.hud-prompt .key {
+	font-family: var(--nh-mono);
+	font-weight: 700;
+	color: #05080d;
+	background: var(--nh-teal);
+	padding: 1px 8px;
+	border-radius: 3px;
+}

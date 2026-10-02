@@ -7,6 +7,8 @@ import { Graphics, QUALITY_PRESETS } from '../render/Graphics';
 import { CityRenderer } from '../render/CityRenderer';
 import { HumanoidRenderer, defaultPose, type HumanoidPose } from '../render/HumanoidRenderer';
 import { sharedUniforms } from '../render/materials';
+import { VehicleRenderer } from '../render/VehicleRenderer';
+import { Effects } from '../render/Effects';
 import { CameraController, type CameraTarget } from './CameraController';
 import { Hud } from '../ui/Hud';
 import { Menus } from '../ui/Menus';
@@ -21,6 +23,8 @@ export class Game {
 	readonly city: CityRenderer;
 	readonly humans: HumanoidRenderer;
 	readonly cam: CameraController;
+	readonly vehicleViews: VehicleRenderer;
+	readonly effects: Effects;
 	readonly hud: Hud;
 	readonly menus: Menus;
 	state: GameState = 'menu';
@@ -48,6 +52,9 @@ export class Game {
 		this.city = new CityRenderer(this.world.city, this.graphics.scene);
 		this.humans = new HumanoidRenderer(this.graphics.scene, SIM.maxRenderedActors + 8);
 		this.cam = new CameraController(this.graphics.camera, this.world.collision);
+		this.vehicleViews = new VehicleRenderer(this.graphics.scene);
+		this.effects = new Effects(this.graphics.scene);
+		this.hookEffects();
 		this.input.attach(this.graphics.renderer.domElement);
 		this.hud = new Hud(ui, this.world);
 		this.menus = new Menus(ui, {
@@ -73,6 +80,30 @@ export class Game {
 
 		const p = this.world.player;
 		this.city.buildAround(p.x, p.z, 500);
+		this.spawnStarterVehicles();
+	}
+
+	/** Player-owned car parked outside the safehouse, plus a couple of street cars nearby. */
+	private spawnStarterVehicles(): void {
+		const w = this.world;
+		const home = w.city.poi('safehouse')!;
+		const fx = Math.sin(home.facing);
+		const fz = Math.cos(home.facing);
+		const along = { x: Math.cos(home.facing), z: -Math.sin(home.facing) };
+		const heading = home.facing - Math.PI / 2;
+		const own = w.vehicles.spawn('coupe', home.x + fx * 3.8 + along.x * 6, home.z + fz * 3.8 + along.z * 6, heading, 'owned', 0x2ac8e8);
+		if (own) own.persistent = true;
+		w.vehicles.spawn('pickup', home.x + fx * 3.8 - along.x * 8, home.z + fz * 3.8 - along.z * 8, heading, 'parked');
+	}
+
+	private hookEffects(): void {
+		const bus = this.world.bus;
+		bus.on('explosion', (e) => this.effects.explosion(e.x, e.y, e.z, e.radius));
+		bus.on('impact', (e) => {
+			this.effects.sparks(e.x, 0.6, e.z, 0, 0.5, 0, Math.min(16, Math.floor(e.speed)));
+			if (e.vehicle.driver === 'player' || e.other?.driver === 'player') this.cam.addShake(Math.min(0.8, e.speed * 0.04));
+		});
+		bus.on('shake', (e) => this.cam.addShake(e.amount));
 	}
 
 	start(): void {
@@ -162,14 +193,26 @@ export class Game {
 	private fillCamTarget(): void {
 		const p = this.world.player;
 		const t = this.camTarget;
-		t.x = p.x;
-		t.y = p.y + this.surfaceOffset;
-		t.z = p.z;
-		t.heading = p.heading;
-		t.speed = p.speed;
-		t.size = 4;
-		t.aiming = p.aiming;
-		t.crouching = p.crouching;
+		const v = p.state === 'driving' ? p.vehicle : null;
+		if (v) {
+			t.x = v.x;
+			t.y = v.y;
+			t.z = v.z;
+			t.heading = v.heading;
+			t.speed = Math.abs(v.forwardSpeed);
+			t.size = v.def.length;
+			t.aiming = false;
+			t.crouching = false;
+		} else {
+			t.x = p.x;
+			t.y = p.y + this.surfaceOffset;
+			t.z = p.z;
+			t.heading = p.heading;
+			t.speed = p.speed;
+			t.size = 4;
+			t.aiming = p.aiming;
+			t.crouching = p.crouching;
+		}
 		t.lookBehind = this.input.isDown('lookBehind');
 	}
 
@@ -217,6 +260,7 @@ export class Game {
 		this.surfaceOffset += (targetOffset - this.surfaceOffset) * Math.min(1, dt * 12);
 
 		this.fillCamTarget();
+		if (this.state !== 'menu') this.cam.setMode(p.state === 'driving' ? 'vehicle' : 'foot', this.camTarget);
 		if (this.state === 'menu') {
 			this.cam.update(dt, 0, 0, this.camTarget);
 		} else if (this.state === 'playing') {
@@ -243,10 +287,49 @@ export class Game {
 		this.humans.end();
 
 		const q = this.graphics.quality;
-		this.city.update(cam.position.x, cam.position.z, q.drawDistance, q.detailDistance, sharedUniforms.uNight.value, dt);
+		const night = sharedUniforms.uNight.value;
+		this.city.update(cam.position.x, cam.position.z, q.drawDistance, q.detailDistance, night, dt);
+		this.vehicleViews.update(w.vehicles.list, p.state === 'driving' ? p.vehicle : null, night, dt, cam.position.x, cam.position.z, Math.min(q.drawDistance, 450));
+		this.updateEffects(dt);
 
+		this.updatePrompt();
 		this.hud.update(dt, w, this.debugText());
 		this.graphics.render();
+	}
+
+	private updatePrompt(): void {
+		const w = this.world;
+		const p = w.player;
+		if (this.state !== 'playing' || p.state !== 'onFoot') {
+			this.hud.setPrompt(null);
+			return;
+		}
+		const v = w.vehicles.enterCandidate();
+		if (v) {
+			const name = `${v.def.make} ${v.def.name}`;
+			const verb = v.role === 'owned' ? 'Get in your' : v.driver ? 'Carjack the' : v.role === 'mission' ? 'Get in the' : 'Steal the';
+			this.hud.setPrompt('F', `${verb} ${name}`);
+			return;
+		}
+		this.hud.setPrompt(null);
+	}
+
+	private updateEffects(dt: number): void {
+		const cam = this.graphics.camera.position;
+		if (this.state === 'playing') {
+			for (const v of this.world.vehicles.list) {
+				if (v.destroyed && !v.sinking) {
+					if (v.age % 1 < 0.5 && (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2 < 150 * 150) this.effects.vehicleSmoke(v.x, 1.2, v.z, 0, false, dt * 0.5);
+					continue;
+				}
+				if (v.healthFraction > 0.4 || v.sinking) continue;
+				if ((v.x - cam.x) ** 2 + (v.z - cam.z) ** 2 > 200 * 200) continue;
+				const hx = v.x + v.forwardX * v.halfLength * 0.7;
+				const hz = v.z + v.forwardZ * v.halfLength * 0.7;
+				this.effects.vehicleSmoke(hx, v.def.height * 0.7, hz, v.healthFraction, v.burning, dt);
+			}
+			this.effects.update(dt);
+		}
 	}
 
 	private debugText(): string {
@@ -258,7 +341,8 @@ export class Game {
 			`calls ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k`,
 			`chunks ${this.city.builtCount}/${this.city.totalChunks}`,
 			`pos ${p.x.toFixed(1)}, ${p.y.toFixed(2)}, ${p.z.toFixed(1)}  ${this.world.currentDistrict ?? ''}`,
-			`state ${p.state}  speed ${p.speed.toFixed(1)}`,
+			`state ${p.state}  speed ${(p.vehicle ? Math.abs(p.vehicle.forwardSpeed) * 3.6 : p.speed).toFixed(1)}${p.vehicle ? ' km/h hp ' + p.vehicle.health.toFixed(0) : ''}`,
+			`vehicles ${this.world.vehicles.count} (views ${this.vehicleViews.viewCount})  particles ${this.effects.liveParticles}`,
 		].join('\n');
 	}
 }
